@@ -1,0 +1,15 @@
+# Build output
+/bin/
+lapel.exe
+lapel
+
+# Project-local desired-state SQLite store
+.lapel/
+*.db
+*.db-shm
+*.db-wal
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
