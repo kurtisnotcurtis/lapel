@@ -1,0 +1,46 @@
+# LAPeL manifest — declarative environment config.
+# See internal/domain/manifest.go for field documentation.
+
+schemaVersion: 1
+
+distro:
+  name: Ubuntu-Lean
+  base: ubuntu          # "ubuntu" or "debian"; defaults to "ubuntu"
+  version: "24.04"      # pinned release; auto-selected default when omitted
+  defaultUser: kurt     # WSL default user (defaults to $USER)
+  systemd: true         # enables [boot] systemd=true in wsl.conf
+
+packages:
+  baseline:             # override defaults (nil = use built-in agent toolkit)
+    - git
+    - curl
+    - wget
+    - ca-certificates
+    - gnupg
+    - unzip
+    - zip
+    - tmux
+    - xxd
+    - procps
+    - iproute2
+    - openssh-server
+  extras:               # additional packages beyond baseline
+    - ripgrep
+    - fd-find
+    - tree
+
+jail:
+  name: developer
+  user: kurt            # defaults to distro.defaultUser
+  filesystem:
+    "C:\\Users\\Kurt\\Projects": read-write
+    "C:\\Users\\Kurt\\.ssh": read-only
+    "C:\\Windows\\System32": deny
+  network: unrestricted # "unrestricted" | "outbound-only" | "none"
+  processes:
+    privileged: false   # agent runs as non-root by default
+    timeoutSeconds: 300 # kill long-running processes after 5 min
+
+env:
+  TERM: xterm-256color
+  LANG: en_US.UTF-8
