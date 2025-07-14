@@ -31,6 +31,7 @@ func root() *cobra.Command {
 		Short: "Get local AI working in WSL — properly.",
 	}
 	r.AddCommand(
+		setupCmd(),
 		doctorCmd(),
 		envCmd(),
 		providerCmd(),
@@ -41,6 +42,7 @@ func root() *cobra.Command {
 		statusCmd(),
 		planCmd(),
 		checkLocalhostCmd(),
+		runCmd(),
 		healthCmd(),
 	)
 	return r
