@@ -1,4 +1,4 @@
-// Package domain holds the core, backend-independent objects of LAPeL.
+// Package domain holds the core, backend-independent objects of lapel.
 //
 // These types must stay independent so the model remains stable when new
 // execution backends (VM, container) are introduced. See spec section 2.

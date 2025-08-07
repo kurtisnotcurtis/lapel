@@ -10,7 +10,7 @@ import (
 	"lapel/internal/config"
 )
 
-// initCmd scaffolds a starter LAPeL.yaml manifest in the current working
+// initCmd scaffolds a starter lapel.yaml manifest in the current working
 // directory. It writes a schema-complete, commented template that documents
 // every managed section and its options; it never runs or modifies any real
 // environment. Re-running overwrites only when --force is given.
@@ -21,7 +21,7 @@ func initCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:    "init",
-		Short:  "Scaffold a starter LAPeL.yaml manifest in this directory",
+		Short:  "Scaffold a starter lapel.yaml manifest in this directory",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if path == "" {
 				path = config.DefaultManifestName
@@ -56,7 +56,7 @@ func initCmd() *cobra.Command {
 // intentionally valid YAML and applies cleanly through config.Load defaults, so
 // `lapel plan` works against it out of the box after edits.
 func starterManifest() string {
-	return `# LAPeL desired-state manifest
+	return `# lapel desired-state manifest
 #
 # This is a starter template. Every managed section below is optional; run
 #   lapel init --help
@@ -70,7 +70,7 @@ name: lapel-project
 # native Linux). Leave distribution blank to import a fresh pinned rootfs.
 environment:
   # Pre-existing distro name (e.g. "Ubuntu-Lean"). Use "import" + base/version
-  # below to have LAPeL create a new one.
+  # below to have lapel create a new one.
   distribution: ""
   # base: ubuntu | debian ; version: e.g. "24.04" / "12"
   base: ubuntu

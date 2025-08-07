@@ -32,7 +32,7 @@ func setupCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "One-command guided setup: provision, import workspace, apply jail",
-		Long: `Set up LAPeL in one command. Checks WSL availability, provisions the
+		Long: `Set up lapel in one command. Checks WSL availability, provisions the
 distro if needed, imports your current project directory (or a path you specify),
 and applies jail policies so your agent can't accidentally eat your Windows files.
 
@@ -40,7 +40,7 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
-			fmt.Println("=== LAPeL Setup ===\n")
+			fmt.Println("=== lapel setup ===\n")
 
 			// Step 1: Quick doctor check
 			fmt.Println("Step 1/4: Checking WSL environment...")

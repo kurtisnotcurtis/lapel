@@ -1,4 +1,4 @@
-// Package jail implements execution policy enforcement for LAPeL sessions.
+// Package jail implements execution policy enforcement for lapel sessions.
 // It provides an incremental approach to sandboxing: starting with environment
 // scoping, PATH filtering, and file permissions (80% of architectural safety),
 // then layering in bind mounts for deeper kernel-level isolation.

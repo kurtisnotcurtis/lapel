@@ -65,7 +65,6 @@ func doctorCmd() *cobra.Command {
 				fmt.Printf("  wsl version: %s\n", status.Version)
 			}
 
-			fmt.Printf("[DEBUG] status.Available=%v\n", status.Available)
 
 			// Check kernel updates if WSL is available.
 			if status.Available {
@@ -439,7 +438,7 @@ func planCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&manifestPath, "manifest", "", "path to LAPeL.yaml (default: discover in cwd/ancestors)")
+	cmd.Flags().StringVar(&manifestPath, "manifest", "", "path to lapel.yaml (default: discover in cwd/ancestors)")
 	return cmd
 }
 
