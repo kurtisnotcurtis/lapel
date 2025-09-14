@@ -11,6 +11,7 @@ package jail
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -245,8 +246,8 @@ func Chown(path string, uid, gid int) error {
 
 // runShell executes a shell command and returns the error if any.
 func runShell(cmd string) error {
-	// In production, this would use exec.Command or the backend's execution interface.
-	// For now, we return nil as a placeholder — actual implementation depends on
-	// whether we're running from WSL or Windows.
-	return nil
+	execCmd := exec.Command("bash", "-c", cmd)
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+	return execCmd.Run()
 }
