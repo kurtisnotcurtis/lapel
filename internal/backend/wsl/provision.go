@@ -319,14 +319,35 @@ func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 // downloadRootfs fetches the rootfs tarball from url into destDir and returns
 // the local path. WSL's --import does not accept URLs (see ImportMinimalDistro),
 // so the archive must land on disk first.
+// downloadRootfs downloads the Ubuntu cloud rootfs from url to destDir.
+// It retries up to 3 times with exponential backoff (1s, 2s) because WSL's
+// DNS resolver (NAT gateway 10.255.255.254) can be flaky for large downloads.
 func downloadRootfs(ctx context.Context, url string, destDir string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
+
+	// Retry up to 3 times with exponential backoff for transient DNS failures.
+	var resp *http.Response
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(attempt) * time.Second
+			fmt.Printf("[retry] rootfs download attempt %d/%d, waiting %s\n", attempt+1, 3, delay)
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		resp, lastErr = http.DefaultClient.Do(req)
+		if lastErr == nil {
+			break
+		}
+	}
+	if resp == nil {
+		return "", fmt.Errorf("rootfs download failed after 3 attempts: %w", lastErr)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -392,9 +413,17 @@ systemd=true
 [automount]
 enabled = true
 
+[network]
+generateResolvConf = false
+
 [user]
 default = %s%s
 WSLCONF
+# Use Google's public DNS for reliable resolution (WSL's NAT gateway 10.255.255.254
+cat > /etc/resolv.conf <<'RESOLV'
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+RESOLV
 # Runtime PATH filter: strip /mnt/[a-zA-Z]+ Windows mount paths from PATH.
 # This works even when [interop] appendWindowsPaths=false doesn't fully suppress them.
 # Handles single-letter mounts (/mnt/c, /mnt/d) and multi-character mounts (/mnt/cdrom).
