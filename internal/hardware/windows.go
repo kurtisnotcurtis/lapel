@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// WindowsDetector detects hardware on Windows via wmic/PowerShell.
+// WindowsDetector detects hardware on Windows via nvidia-smi and PowerShell/CIM.
 type WindowsDetector struct{}
 
 func NewWindowsDetector() *WindowsDetector { return &WindowsDetector{} }
@@ -42,27 +42,49 @@ func (d *WindowsDetector) Detect(ctx context.Context) (*Info, error) {
 }
 
 func (d *WindowsDetector) detectGPU(ctx context.Context) (GPUInfo, error) {
-	// Use PowerShell to query Windows for GPU info - reliable from both Windows and WSL
-	powershellCmd := exec.CommandContext(ctx, "powershell", "-Command",
-		`Get-CimInstance Win32_VideoController | Select-Object Name, @{N="VRAM";E={[math]::Round($_.AdapterRAM / 1GB, 2)}} | Format-List | Out-String`)
+	// 1. Prefer nvidia-smi first: Win32_VideoController.AdapterRAM is a 32-bit
+	// uint32 that wraps/caps at 4 GB on GPUs with >4 GB VRAM (RTX 4070/4080/4090).
+	nvCmd := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name,memory.total,compute_cap", "--format=csv,noheader,nounits")
+	if out, err := nvCmd.Output(); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) > 0 && strings.TrimSpace(lines[0]) != "" {
+			fields := strings.Split(lines[0], ",")
+			if len(fields) >= 2 {
+				var vramMB float64
+				fmt.Sscanf(strings.TrimSpace(fields[1]), "%f", &vramMB)
+				compute := ""
+				if len(fields) >= 3 {
+					compute = strings.TrimSpace(fields[2])
+				}
+				return GPUInfo{
+					Name:      strings.TrimSpace(fields[0]),
+					VRAMGB:    vramMB / 1024.0,
+					Compute:   compute,
+					Available: true,
+				}, nil
+			}
+		}
+	}
+
+	// 2. Fallback to PowerShell Win32_VideoController, sorting by AdapterRAM descending
+	// so discrete GPUs are selected ahead of integrated graphics.
+	powershellCmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command",
+		`Get-CimInstance Win32_VideoController | Sort-Object AdapterRAM -Descending | Select-Object -First 1 Name, @{N="VRAM";E={[math]::Round($_.AdapterRAM / 1GB, 2)}} | Format-List | Out-String`)
 	out, err := powershellCmd.Output()
 	if err != nil {
 		return GPUInfo{}, fmt.Errorf("failed to detect GPU via PowerShell: %w", err)
 	}
 
-	// Parse output like:
-	// Name               : NVIDIA GeForce RTX 4070 SUPER
-	// VRAM               : 12.0
 	s := string(out)
 	var name, vramStr string
 	for _, line := range strings.Split(s, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Name") {
+		if strings.HasPrefix(line, "Name") && name == "" {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
 				name = strings.TrimSpace(strings.TrimSuffix(parts[1], ","))
 			}
-		} else if strings.HasPrefix(line, "VRAM") {
+		} else if strings.HasPrefix(line, "VRAM") && vramStr == "" {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) == 2 {
 				vramStr = strings.TrimSpace(strings.TrimSuffix(parts[1], ","))
@@ -85,11 +107,34 @@ func (d *WindowsDetector) detectGPU(ctx context.Context) (GPUInfo, error) {
 }
 
 func (d *WindowsDetector) detectRAM(ctx context.Context) (RAMInfo, error) {
-	// Use wsl.exe to read /proc/meminfo - reliable from Windows/WSL
+	// 1. Query physical host memory via Win32_OperatingSystem (values are in KB)
+	// so .wslconfig memory caps (e.g. memory=4GB) don't mask the host's real RAM.
+	psCmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command",
+		`$os = Get-CimInstance Win32_OperatingSystem; "$($os.TotalVisibleMemorySize),$($os.FreePhysicalMemory)"`)
+	if out, err := psCmd.Output(); err == nil {
+		parts := strings.Split(strings.TrimSpace(string(out)), ",")
+		if len(parts) == 2 {
+			var totalKB, availKB int64
+			fmt.Sscanf(strings.TrimSpace(parts[0]), "%d", &totalKB)
+			fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &availKB)
+			if totalKB > 0 {
+				totalGB := float64(totalKB) / (1024 * 1024)
+				availGB := float64(availKB) / (1024 * 1024)
+				usedPercent := ((totalGB - availGB) / totalGB) * 100
+				return RAMInfo{
+					TotalGB:     totalGB,
+					AvailableGB: availGB,
+					UsedPercent: usedPercent,
+				}, nil
+			}
+		}
+	}
+
+	// 2. Fallback to WSL /proc/meminfo if PowerShell CIM query fails.
 	xcmd := exec.CommandContext(ctx, "wsl", "--exec", "/bin/sh", "-c", "cat /proc/meminfo | grep -E 'MemTotal:|MemAvailable:'")
 	out, err := xcmd.Output()
 	if err != nil {
-		return RAMInfo{}, fmt.Errorf("failed to detect RAM via wsl.exe: %w (output: %s)", err, string(out))
+		return RAMInfo{}, fmt.Errorf("failed to detect RAM: %w", err)
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
@@ -120,9 +165,8 @@ func (d *WindowsDetector) detectRAM(ctx context.Context) (RAMInfo, error) {
 }
 
 func (d *WindowsDetector) detectCPU(ctx context.Context) (CPUInfo, error) {
-	// Use PowerShell for reliable CPU detection
-	cmd := exec.CommandContext(ctx, "powershell", "-Command",
-		`(Get-CimInstance Win32_Processor).Name + "," + (Get-CimInstance Win32_Processor).NumberOfCores + "," + (Get-CimInstance Win32_Processor).NumberOfLogicalProcessors`)
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command",
+		`$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1; "$($cpu.Name),$($cpu.NumberOfCores),$($cpu.NumberOfLogicalProcessors)"`)
 	out, err := cmd.Output()
 	if err != nil {
 		return CPUInfo{}, fmt.Errorf("running powershell: %w", err)
