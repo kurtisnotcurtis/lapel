@@ -15,8 +15,8 @@ func TestPathResolver_HostToGuest(t *testing.T) {
 	}{
 		{
 			name:     "standard Windows path",
-			hostPath: `C:\Users\kurt\projects`,
-			want:     "/mnt/c/Users/kurt/projects",
+			hostPath: `C:\Users\user\projects`,
+			want:     "/mnt/c/Users/user/projects",
 		},
 		{
 			name:     "root drive",
@@ -30,8 +30,8 @@ func TestPathResolver_HostToGuest(t *testing.T) {
 		},
 		{
 			name:     "forward slashes",
-			hostPath: `C:/Users/kurt/projects`,
-			want:     "/mnt/c/Users/kurt/projects",
+			hostPath: `C:/Users/user/projects`,
+			want:     "/mnt/c/Users/user/projects",
 		},
 		{
 			name:     "nested path",
@@ -65,8 +65,8 @@ func TestPathResolver_GuestToHost(t *testing.T) {
 	}{
 		{
 			name:      "standard mount path",
-			guestPath: "/mnt/c/Users/kurt/projects",
-			want:      `C:\Users\kurt\projects`,
+			guestPath: "/mnt/c/Users/user/projects",
+			want:      `C:\Users\user\projects`,
 		},
 		{
 			name:      "root drive",
@@ -97,7 +97,7 @@ func TestPathResolver_GuestToHost(t *testing.T) {
 func TestPathResolver_RoundTrip(t *testing.T) {
 	r := NewPathResolver()
 
-	hostPath := `C:\Users\kurt\projects\repo`
+	hostPath := `C:\Users\user\projects\repo`
 	guest, err := r.HostToGuest(hostPath)
 	if err != nil {
 		t.Fatalf("HostToGuest failed: %v", err)
@@ -120,7 +120,7 @@ func TestGuestHomePath(t *testing.T) {
 		want string
 	}{
 		{"agent", "workspace", "/home/agent/workspace"},
-		{"kurt", "project", "/home/kurt/project"},
+		{"user", "project", "/home/user/project"},
 	}
 
 	for _, tt := range tests {
@@ -138,7 +138,7 @@ func TestNormalize(t *testing.T) {
 	}{
 		{"/home/agent/workspace/", "/home/agent/workspace"},
 		{"/", "/"},
-		{"C:\\Users\\kurt", "C:/Users/kurt"},
+		{"C:\\Users\\user", "C:/Users/user"},
 	}
 
 	for _, tt := range tests {

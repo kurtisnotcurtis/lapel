@@ -2,7 +2,7 @@
 // execution inside a running distro, resource-config inspection, and optional
 // minimal-distro provisioning. It is intentionally generic — it discovers the
 // host mount and .wslconfig at runtime rather than hard-coding any single
-// machine's layout (e.g. C:\Users\Kurt\.wslconfig).
+// machine's layout (e.g. C:\Users\user\.wslconfig).
 package wsl
 
 import (
