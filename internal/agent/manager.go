@@ -2,18 +2,25 @@ package agent
 
 import "context"
 
-// Manager orchestrates agent detection, configuration, and launching.
+// Manager orchestrates agent detection and configuration.
 type Manager struct {
+	dist   string
 	agents []Agent
 }
 
-// NewManager creates a new agent manager with default agents.
-func NewManager() *Manager {
+// NewManager creates a new agent manager targeting the specified WSL distro
+// (defaults to "Ubuntu-Lean" if omitted).
+func NewManager(distro ...string) *Manager {
+	d := "Ubuntu-Lean"
+	if len(distro) > 0 && distro[0] != "" {
+		d = distro[0]
+	}
 	return &Manager{
+		dist: d,
 		agents: []Agent{
-			NewPiAgent(),
-			NewClaudeCodeAgent(),
-			NewCopilotAgent(),
+			NewPiAgent(d),
+			NewClaudeCodeAgent(d),
+			NewCopilotAgent(d),
 		},
 	}
 }
@@ -37,7 +44,7 @@ func (m *Manager) FindByName(name string) Agent {
 	return nil
 }
 
-// DetectAll checks all agents and returns their detection status.
+// DetectAll checks all agents inside the target WSL distro and returns their status.
 func (m *Manager) DetectAll(ctx context.Context) ([]AgentStatus, error) {
 	var statuses []AgentStatus
 	for _, a := range m.agents {
