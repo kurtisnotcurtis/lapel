@@ -43,7 +43,6 @@ func root() *cobra.Command {
 		planCmd(),
 		checkLocalhostCmd(),
 		runCmd(),
-		healthCmd(),
 	)
 	return r
 }
