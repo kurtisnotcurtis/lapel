@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"lapel/internal/backend/wsl"
 	"lapel/internal/config"
 	"lapel/internal/jail"
 	"lapel/internal/reconcile"
@@ -47,21 +48,50 @@ func openState(path string) (*state.Store, error) {
 // that committed reference.
 func applyCmd() *cobra.Command {
 	var (
-		manifestPath string
-		statePath    string
+		manifestPath  string
+		statePath     string
+		pluginName    string
+		syncAll       bool
+		skipProvision bool
 	)
 	cmd := &cobra.Command{
 		Use:   "apply",
-		Short: "Persist the desired-state baseline and import workspace",
+		Short: "Provision environment, import workspace, sync VS Code plugins, and persist baseline",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if err := os.MkdirAll(".", 0o755); err != nil { // allow manifest discovery in cwd
 				return fmt.Errorf("creating work dir: %w", err)
 			}
+
+			// Sync VS Code plugins when --plugin or --all is requested.
+			if pluginName != "" || syncAll {
+				if err := syncPlugins(ctx, pluginName, syncAll); err != nil {
+					return err
+				}
+			}
+
 			m, err := config.LoadEffective(manifestPath)
 			if err != nil {
+				// If the user only requested plugin sync and has no lapel.yaml in cwd, succeed cleanly.
+				if (pluginName != "" || syncAll) && manifestPath == "" {
+					return nil
+				}
 				return err
 			}
+
+			// Provision WSL environment if available and not skipped.
+			if !skipProvision {
+				b := &wsl.DistBackend{}
+				if det, err := b.Detect(ctx); err == nil && det.Available {
+					fmt.Printf("Ensuring environment %q is provisioned... ", reconcile.EnvName(m))
+					if err := b.Provision(ctx, m.EnvSpec()); err != nil {
+						fmt.Printf("warning (%v)\n", err)
+					} else {
+						fmt.Printf("OK\n")
+					}
+				}
+			}
+
 			st, err := openState(statePath)
 			if err != nil {
 				return fmt.Errorf("opening state store: %w", err)
@@ -118,6 +148,9 @@ func applyCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&manifestPath, "manifest", "", "path to lapel.yaml (default: discover in cwd/ancestors)")
 	cmd.Flags().StringVar(&statePath, "state", "", "path to state database (default: ./.lapel/state.db)")
+	cmd.Flags().StringVar(&pluginName, "plugin", "", "sync VS Code plugin configuration (kilo-code, continue, cline, or all)")
+	cmd.Flags().BoolVar(&syncAll, "all", false, "sync configurations for all supported VS Code plugins")
+	cmd.Flags().BoolVar(&skipProvision, "skip-provision", false, "skip WSL distro provisioning step")
 	return cmd
 }
 
@@ -238,15 +271,20 @@ func jailControlsCmd() *cobra.Command {
 		timeout int
 	)
 	cmd := &cobra.Command{
-		Use:   "jail-controls",
-		Short: "Show jail enforcement controls and their status",
+		Use:    "jail-controls",
+		Short:  "Show jail enforcement controls and their status",
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			cwd, err := os.Getwd()
+			if err != nil || cwd == "" {
+				cwd = "."
+			}
 			profile := jail.Profile{
-				Name: "developer",
-				User: user,
+				Name:      "developer",
+				User:      user,
 				Processes: jail.ProcessConfig{TimeoutSeconds: timeout},
 				Filesystem: map[string]string{
-					"C:\\Users\\Kurt\\Projects": "read-write",
+					cwd: "read-write",
 				},
 				Network: jail.NetworkUnrestricted,
 			}

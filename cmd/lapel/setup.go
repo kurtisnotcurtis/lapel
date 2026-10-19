@@ -8,18 +8,22 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"lapel/community"
 	"lapel/internal/backend/wsl"
+	"lapel/internal/config"
 	"lapel/internal/domain"
+	"lapel/internal/features"
+	"lapel/internal/hardware"
 	"lapel/internal/jail"
 	"lapel/internal/provider"
 	"lapel/internal/workspace"
 )
 
 // setupCmd is the one-command "try something" experience. It chains:
-//   1. Quick doctor check (WSL availability, provider reachability)
-//   2. Provision the distro if needed
-//   3. Import workspace from current directory or prompt for path
-//   4. Apply jail policies
+//  1. Quick doctor check (WSL availability, provider reachability)
+//  2. Provision the distro if needed
+//  3. Import workspace from current directory or prompt for path
+//  4. Apply jail policies
 //
 // This is the hero command for new users — everything they need to get started.
 func setupCmd() *cobra.Command {
@@ -42,6 +46,19 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 
 			fmt.Println("=== lapel setup ===")
 
+			// Show feature flag status
+			if features.IsEnabled(features.CommunityEnabled) {
+				fmt.Printf("\n🌐 Community features enabled\n")
+				fmt.Printf("   Community endpoint: %s\n", features.GetEndpoint())
+				if !features.IsEnabled(features.UseOfficialBackend) {
+					fmt.Printf("   Using: Self-hosted backend\n")
+				} else {
+					fmt.Printf("   Using: Lapel hosted backend (api.lapel.dev)\n")
+				}
+			} else {
+				fmt.Println("\n🔒 Community features disabled")
+			}
+
 			// Step 1: Quick doctor check
 			fmt.Println("Step 1/4: Checking WSL environment...")
 			b := &wsl.DistBackend{}
@@ -62,6 +79,38 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			gStatus, err := wsl.CheckGPUStatus(ctx)
 			if err == nil && len(gStatus.GPUs) > 0 {
 				fmt.Printf("  ✓ GPU detected: %s\n", gStatus.GPUs[0])
+			}
+
+			// Detect hardware for community profile (if enabled)
+			if features.IsEnabled(features.CommunityEnabled) {
+				fmt.Println("\nDetecting hardware profile...")
+				hwInfo, err := hardware.Detect(ctx)
+				if err == nil {
+					// Create a minimal hardware profile for community
+					profile := community.HardwareProfile{
+						OS:       "Windows",
+						RAM:      int64(hwInfo.RAM.TotalGB),
+						CPUModel: hwInfo.CPU.Name,
+						CPUCores: hwInfo.CPU.Cores,
+					}
+
+					if hwInfo.GPU.Name != "" {
+						profile.GPUs = append(profile.GPUs, community.GPUInfo{
+							Name:   hwInfo.GPU.Name,
+							VRAMGB: int(hwInfo.GPU.VRAMGB),
+
+							CUDAVersion: hwInfo.GPU.Compute,
+						})
+					}
+
+					fmt.Printf("  ✓ Hardware profile created (%d GB RAM", profile.RAM)
+					if len(profile.GPUs) > 0 {
+						fmt.Printf(", %s with %d GB VRAM", profile.GPUs[0].Name, profile.GPUs[0].VRAMGB)
+					}
+					fmt.Printf(", hash: %s)\n", profile.Hash())
+				} else {
+					fmt.Printf("  ⚠ Could not detect hardware: %s\n", err)
+				}
 			}
 
 			// Step 2: Provider reachability
@@ -87,11 +136,21 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 
 			// Step 3: Provision distro if needed
 			fmt.Println("\nStep 3/4: Ensuring distro is provisioned...")
+			m, manifestErr := config.LoadEffective("")
 			spec := domain.Environment{Name: wsl.Dist}
+			if manifestErr == nil && m != nil {
+				spec = m.EnvSpec()
+				if !cmd.Flags().Changed("user") && m.Jail.User != "" {
+					user = m.Jail.User
+				}
+				if !cmd.Flags().Changed("workspace") && m.Workspace.Path != "" {
+					workspacePath = m.Workspace.Path
+				}
+			}
 			if err := b.Provision(ctx, spec); err != nil {
 				return fmt.Errorf("provisioning failed: %w", err)
 			}
-			fmt.Printf("  ✓ Agent-toolkit baseline installed in %s\n", wsl.Dist)
+			fmt.Printf("  ✓ Agent-toolkit baseline installed in %s\n", spec.Name)
 
 			// Step 4: Import workspace
 			fmt.Println("\nStep 4/4: Setting up workspace...")
@@ -104,12 +163,18 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			}
 
 			wsName := filepath.Base(workspacePath)
+			if manifestErr == nil && m != nil && m.Workspace.Name != "" {
+				wsName = m.Workspace.Name
+			}
 			if wsName == "" || wsName == "." {
 				wsName = "project"
 			}
 
 			wsManager := workspace.NewManager(user)
 			importMode := workspace.ImportMode("bind") // prefer bind mounts for dev
+			if manifestErr == nil && m != nil && m.Workspace.ImportMode != "" {
+				importMode = workspace.ImportMode(m.Workspace.ImportMode)
+			}
 
 			if wsManager.Exists(wsName, importMode) && !force {
 				fmt.Printf("  ℹ Workspace %q already exists. Use --force to reimport.\n", wsName)
@@ -120,6 +185,14 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 					return fmt.Errorf("importing workspace: %w", err)
 				}
 				fmt.Printf("OK\n")
+			}
+
+			// Persist desired-state baseline to .lapel/state.db if a manifest is present
+			if manifestErr == nil && m != nil {
+				if st, err := openState(""); err == nil {
+					_, _ = persistBaseline(st, m)
+					_ = st.Close()
+				}
 			}
 
 			// Apply jail policies
@@ -148,10 +221,17 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			}
 
 			fmt.Println("\n=== Setup Complete ===")
+			if features.IsEnabled(features.CommunityEnabled) {
+				fmt.Printf("\n🌐 Community features ready\n")
+				fmt.Printf("   Share your performance data: lapel community share\n")
+				fmt.Printf("   View recommendations: lapel community insights\n")
+			}
+
 			fmt.Printf("\nNext steps:\n")
 			fmt.Printf("  • Run your agent with: lapel run\n")
+			fmt.Printf("  • Sync VS Code plugins: lapel apply --plugin=kilo-code (or --all)\n")
+			fmt.Printf("  • Benchmark your rig: lapel benchmark\n")
 			fmt.Printf("  • Check provider status: lapel provider status\n")
-			fmt.Printf("  • Inspect environment: lapel env status\n")
 
 			return nil
 		},
