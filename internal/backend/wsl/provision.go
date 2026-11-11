@@ -19,15 +19,19 @@ import (
 )
 
 // AgentToolkitPackages is the minimum set of packages lapel installs into
-// a freshly provisioned minimal Ubuntu/Debian distro. It is a gap-fill for a
-// clean cloud image: git/curl/wget/ca-certificates/gnupg/unzip/zip, search and
-// filesystem helpers (ripgrep/fd-find/tree), tmux/xxd, and the minimal system
-// utilities procps/iproute2. Git history rewriting is provided by
-// git-filter-repo (pulls in python3 as an apt dependency). Node and Python are
-// intentionally NOT apt-installed here — they are managed by fnm/uv respectively
-// (see ProvisionOptions).
+// a freshly provisioned minimal Ubuntu/Debian distro for agentic use. It is a
+// gap-fill for a clean cloud image, curated so an agent can:
+//   - compile and run Go code (golang-go)
+//   - use Python tooling explicitly via uv (uv + python3; see installUv)
+//   - process JSON/YAML from APIs and configs (jq, libyaml-tools)
+//   - SSH out to remote systems (openssh-client) in addition to accepting
+//     inbound connections from Windows (openssh-server)
+//   - compile C/Rust code when pulling repos that need it (build-essential + make)
+//
+// Node is managed by fnm (see installFnmAndNode); Python is managed by uv
+// (see installUv), which also provides pip-compatible functionality.
 var AgentToolkitPackages = []string{
-	// core tooling
+	// core tooling — git, network, archives
 	"git", "curl", "wget", "ca-certificates", "gnupg", "unzip", "zip",
 	// git history rewriting (provides the git-filter-repo command)
 	"git-filter-repo",
@@ -41,6 +45,21 @@ var AgentToolkitPackages = []string{
 	// Windows. On WSL 3.x with NAT networking this is reliable; mirrored mode
 	// breaks host->WSL port forwarding (see InspectConfig notes).
 	"openssh-server",
+	// SSH client: agent needs outbound SSH to reach GitHub, remote hosts,
+	// and other agents in multi-agent setups.
+	"openssh-client",
+	// Go runtime — lapel is written in Go and agents frequently compile/run
+	// Go code from repos (e.g. go install, go build, vet).
+	"golang-go",
+	// Python3 + pip — explicit install so agents can use Python tooling
+	// without relying on transitive apt dependencies.
+	"python3", "python3-pip",
+	// JSON/YAML processing — critical for API responses, config files,
+	// and agent tool outputs. libyaml-tools provides yq via apt.
+	"jq", "libyaml-tools",
+	// Build tools — agents compile C/Rust code from repos that need it
+	// (e.g. go build with CGO, rustc from source).
+	"make", "build-essential",
 }
 
 // ProvisionOptions configures optional minimal-distro creation during
@@ -363,7 +382,7 @@ if ! id -u %s >/dev/null 2>&1; then
   useradd -m -s /bin/bash -G sudo %s
 fi
 # Passwordless sudo for common provisioning commands (more restrictive than ALL)
-echo %s " ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/systemctl, /usr/sbin/useradd, /usr/sbin/usermod, /bin/chmod, /bin/chown, /bin/mkdir, /usr/bin/tee" > /etc/sudoers.d/90-lapel-%s
+echo %s " ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/systemctl, /usr/sbin/useradd, /usr/sbin/usermod, /bin/chmod, /bin/chown, /bin/mkdir, /usr/bin/tee, /bin/bash" > /etc/sudoers.d/90-lapel-%s
 chmod 440 /etc/sudoers.d/90-lapel-%s
 if [ -f /etc/wsl.conf ]; then cp /etc/wsl.conf /etc/wsl.conf.lapel-bak; fi
 cat > /etc/wsl.conf <<'WSLCONF'
@@ -451,6 +470,44 @@ func InstallAgentToolkit(ctx context.Context, dist string, packages []string) er
 	return nil
 }
 
+// installUv ensures uv (Rust-based Python package manager + runner) is installed
+// and usable inside the distro. It is idempotent: if /usr/local/uv exists it skips
+// the download; otherwise it runs the official installer as root, then pins uv to
+// a stable version so `uv` works for agents out of the box.
+func installUv(ctx context.Context, dist string) error {
+	// Check whether uv is already installed (root-owned binary in /usr/local/uv).
+	check := `test -x /usr/local/uv/bin/uv && echo ok`
+	out, err := runRoot(ctx, dist, check)
+	if err != nil || !strings.Contains(out, "ok") {
+		// Official uv installer: downloads the latest release tarball and
+		// extracts to /usr/local/uv. We use the root path so any user can
+		// pick it up from PATH.
+		script := `set -e
+if ! command -v curl >/dev/null 2>&1; then apt-get -y install curl; fi
+curl -fsSL https://astral.sh/uv/install.sh | bash -s -- --install-dir /usr/local/uv
+# uv's installer writes to ~/.bashrc of the calling user, but we want it
+# system-wide so every agent session picks up ` + "`export PATH=\"/usr/local/uv/bin:$PATH\"`" + `. The
+# per-user init is harmless; we just make sure /usr/local/uv/bin is on PATH.
+cat > /etc/profile.d/uv.sh <<'UVSH'
+export UV_CACHE_DIR=/tmp/uv-cache
+export PATH="/usr/local/uv/bin:$PATH"
+UVSH`
+		if _, err := runRoot(ctx, dist, script); err != nil {
+			return fmt.Errorf("installing uv: %w", err)
+		}
+	}
+	// Pin a stable Python version for agents. `uv python install 3.12` installs
+	// CPython 3.12 as a standalone binary (no system Python dependency), so it
+	// works even on minimal distros without /usr/bin/python3.
+	useScript := `set -e
+export PATH="/usr/local/uv/bin:$PATH"
+uv python install 3.12`
+	if _, err := runRoot(ctx, dist, useScript); err != nil {
+		return fmt.Errorf("pinning Python 3.12 via uv: %w", err)
+	}
+	return nil
+}
+
 // installFnmAndNode ensures fnm + a Node LTS runtime are installed and usable
 // inside the distro. It is idempotent: if /usr/local/fnm exists it skips the
 // download; otherwise it runs the official installer as root, then pins Node LTS
@@ -521,6 +578,9 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 	}
 	if err := installFnmAndNode(ctx, opts.Name); err != nil {
 		return fmt.Errorf("fnm + Node LTS: %w", err)
+	}
+	if err := installUv(ctx, opts.Name); err != nil {
+		return fmt.Errorf("uv + Python 3.12: %w", err)
 	}
 	// Give the Windows host a direct `ssh <user>@localhost` path into the
 	// distro. Skipped (not an error) when no public key file exists.

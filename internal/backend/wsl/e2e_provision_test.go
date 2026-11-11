@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"lapel/internal/agent"
 	"lapel/internal/domain"
+	"lapel/internal/provider"
 )
 
 // TestE2EFreshImportAndSetup exercises the full provisioning path against a
@@ -192,4 +194,145 @@ func TestE2EFreshImportAndSetup(t *testing.T) {
 		t.Fatalf("after full reboot the default user is %q, want %q", booted, user)
 	}
 	t.Logf("reboot verification passed: default user still %q", user)
+
+	// 7. Agent detection: verify that agents can be detected inside the distro.
+	// This tests the exec path for agent binaries (pi, copilot, claude).
+	t.Log("\n=== Agent Detection ===")
+	agentMgr := agent.NewManager()
+	agents, err := agentMgr.DetectAll(ctx)
+	if err != nil {
+		t.Fatalf("agent detection failed: %v", err)
+	}
+	for _, a := range agents {
+		status := "✗ not found"
+		if a.Installed {
+			status = "✓ available"
+		}
+		errMsg := ""
+		if a.Error != "" {
+			errMsg = fmt.Sprintf(" (error: %s)", a.Error)
+		}
+		t.Logf("  %s: %s%s", a.Name, status, errMsg)
+	}
+
+	// 8. Inference provider testing: check if LM Studio or Ollama are reachable.
+	// This tests the full stack from WSL to Windows host networking.
+	t.Log("\n=== Inference Provider Testing ===")
+	reg := provider.NewRegistry(name) // use our throwaway distro
+	statuses, err := reg.StatusAll(ctx)
+	if err != nil {
+		t.Fatalf("provider status check failed: %v", err)
+	}
+	for _, s := range statuses {
+		installed := "no"
+		if s.Installed {
+			installed = "yes"
+		}
+		running := "no"
+		if s.Running {
+			running = "yes"
+		}
+		t.Logf("  %s: installed=%s running=%s port=%d",
+			s.Name, installed, running, s.Port)
+		if len(s.Models) > 0 {
+			t.Logf("    models: %d loaded", len(s.Models))
+		}
+		if s.Error != "" {
+			t.Logf("    error: %s", s.Error)
+		}
+	}
+
+	// 9. Verify Go runtime is functional (we just installed golang-go).
+	t.Log("\n=== Go Runtime Verification ===")
+	goOut, err := runWslWith(ctx, []string{"-d", name, "bash", "-c", "go version"})
+	if err != nil {
+		t.Fatalf("go version check failed: %v", err)
+	}
+	t.Logf("  Go: %s", strings.TrimSpace(goOut))
+
+	// 10. Verify Python/uv is functional.
+	t.Log("\n=== Python/uv Verification ===")
+	uvOut, err := runWslWith(ctx, []string{"-d", name, "bash", "-c", "uv --version"})
+	if err != nil {
+		t.Fatalf("uv version check failed: %v", err)
+	}
+	t.Logf("  uv: %s", strings.TrimSpace(uvOut))
+
+	pythonOut, err := runWslWith(ctx, []string{"-d", name, "bash", "-c", "python3 --version"})
+	if err != nil {
+		// python3 might not be in PATH if uv manages it exclusively; that's ok
+		t.Logf("  python3: %s (may be managed by uv)", strings.TrimSpace(pythonOut))
+	} else {
+		t.Logf("  python3: %s", strings.TrimSpace(pythonOut))
+	}
+
+	// 11. Verify Node/fnm is functional.
+	t.Log("\n=== Node/fnm Verification ===")
+	nodeOut, err := runWslWith(ctx, []string{"-d", name, "bash", "-c", "node --version"})
+	if err != nil {
+		t.Fatalf("node version check failed: %v", err)
+	}
+	t.Logf("  Node: %s", strings.TrimSpace(nodeOut))
+
+	fnmOut, err := runWslWith(ctx, []string{"-d", name, "bash", "-c", "fnm --version"})
+	if err != nil {
+		t.Fatalf("fnm version check failed: %v", err)
+	}
+	t.Logf("  fnm: %s", strings.TrimSpace(fnmOut))
+
+	// 12. Test a simple Go program compilation and execution.
+	t.Log("\n=== Go Compilation Test ===")
+	goTestProgram := `
+package main
+import "fmt"
+func main() {
+	fmt.Println("Hello from lapel e2e test!")
+}`
+	tmpDir := "/tmp/lapel-e2e-go-test"
+	runWslWith(ctx, []string{"-d", name, "bash", "-c", fmt.Sprintf("mkdir -p %s && cat > main.go << 'EOF'\n%s\nEOF", tmpDir, goTestProgram)})
+	compileRes, err := runWslWith(ctx, []string{"-d", name, "bash", "-c", fmt.Sprintf("cd %s && go build -o hello main.go && ./hello 2>&1", tmpDir)})
+	if err != nil {
+		t.Fatalf("Go compilation test failed: %v\noutput: %s", err, compileRes)
+	}
+	t.Logf("  Go program output: %s", strings.TrimSpace(compileRes))
+
+	// 13. Test SSH connectivity from Windows host to WSL distro.
+	if !inWSL {
+		t.Log("\n=== SSH Connectivity Test ===")
+		sshOut, err := runWslWith(ctx, []string{"-d", name, "bash", "-c", "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 localhost whoami"})
+		if err != nil {
+			t.Logf("  SSH localhost test: %v (may need passwordless sudo setup)", err)
+		} else {
+			t.Logf("  SSH localhost: %s", strings.TrimSpace(sshOut))
+		}
+	}
+
+	// 14. Summary report.
+	t.Log("\n=== E2E Test Summary ===")
+	t.Logf("Distro: %s (ubuntu 24.04)", name)
+	t.Logf("User: %s", user)
+	t.Logf("Agents detected: %d/%d", countAvailable(agents), len(agents))
+	t.Logf("Providers running: %d/%d", countRunning(statuses), len(statuses))
+}
+
+// countAvailable counts how many agents are available.
+func countAvailable(agents []agent.AgentStatus) int {
+	count := 0
+	for _, a := range agents {
+		if a.Installed {
+			count++
+		}
+	}
+	return count
+}
+
+// countRunning counts how many providers are running.
+func countRunning(statuses []*provider.ProviderStatus) int {
+	count := 0
+	for _, s := range statuses {
+		if s.Running {
+			count++
+		}
+	}
+	return count
 }
