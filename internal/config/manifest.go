@@ -37,7 +37,7 @@ type Manifest struct {
 // Environment mirrors domain.Environment for the manifest's environment section.
 type Environment struct {
 	// Distribution is the target distro name. Use "import" (or leave blank and
-	// supply Base+Version) to have LAPeL create a fresh pinned rootfs.
+	// supply Base+Version) to have lapel create a fresh pinned rootfs.
 	Distribution string            `yaml:"distribution"`
 	Base         string            `yaml:"base"`         // "ubuntu" | "debian"
 	Version      string            `yaml:"version"`      // e.g. "24.04" / "12"

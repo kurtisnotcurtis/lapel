@@ -84,7 +84,7 @@ doctor → setup → run
 For users who want more control, lapel supports a YAML manifest with drift detection and transactional apply/rollback. This is an escape hatch — the guided setup handles defaults well.
 
 ```bash
-lapel init                # scaffold LAPeL.yaml in current dir
+lapel init                # scaffold lapel.yaml in current dir
 lapel plan                # preview changes (non-zero exit on drift)
 lapel apply               # persist baseline + import workspace
 lapel status              # compare live state against baseline over time

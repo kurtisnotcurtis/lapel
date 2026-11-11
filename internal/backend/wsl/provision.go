@@ -18,7 +18,7 @@ import (
 	"lapel/internal/domain"
 )
 
-// AgentToolkitPackages is the minimum set of packages LAPeL installs into
+// AgentToolkitPackages is the minimum set of packages lapel installs into
 // a freshly provisioned minimal Ubuntu/Debian distro. It is a gap-fill for a
 // clean cloud image: git/curl/wget/ca-certificates/gnupg/unzip/zip, search and
 // filesystem helpers (ripgrep/fd-find/tree), tmux/xxd, and the minimal system

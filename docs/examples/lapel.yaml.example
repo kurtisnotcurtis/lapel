@@ -1,4 +1,4 @@
-# LAPeL manifest — declarative environment config.
+# lapel manifest — declarative environment config.
 # See internal/domain/manifest.go for field documentation.
 
 schemaVersion: 1

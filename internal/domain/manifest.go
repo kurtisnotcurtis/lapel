@@ -1,6 +1,6 @@
-// Package domain defines the LAPeL manifest — a declarative description
+// Package domain defines the lapel manifest — a declarative description
 // of the Linux environment, jail rules, and runtime configuration that
-// LAPeL provisions into WSL. The manifest is the single source of truth:
+// lapel provisions into WSL. The manifest is the single source of truth:
 // `apply` reconciles the live distro against it; `status` reports drift.
 package domain
 
@@ -13,7 +13,7 @@ type Manifest struct {
 	// changes to field semantics or structure. v1 is the current schema.
 	SchemaVersion int `yaml:"schemaVersion" json:"schemaVersion"`
 
-	// Distro configures the WSL distribution that LAPeL manages.
+	// Distro configures the WSL distribution that lapel manages.
 	Distro DistroConfig `yaml:"distro" json:"distro"`
 
 	// Packages controls which apt packages are installed beyond the baseline

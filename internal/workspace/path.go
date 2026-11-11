@@ -1,5 +1,5 @@
 // Package workspace provides Win/Lin path resolution and workspace import logic
-// for LAPeL. It handles the conversion between Windows host paths (e.g.,
+// for lapel. It handles the conversion between Windows host paths (e.g.,
 // C:\Users\kurt\projects) and WSL2 guest paths (e.g., /mnt/c/Users/kurt/projects
 // or /home/agent/workspace), as well as the actual import process using rsync -a
 // for copy mode or bind mounts for bind mode.

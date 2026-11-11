@@ -438,7 +438,7 @@ func planCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&manifestPath, "manifest", "", "path to LAPeL.yaml (default: discover in cwd/ancestors)")
+	cmd.Flags().StringVar(&manifestPath, "manifest", "", "path to lapel.yaml (default: discover in cwd/ancestors)")
 	return cmd
 }
 

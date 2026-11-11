@@ -34,7 +34,7 @@ If no --agent is specified, lapel will detect which agents are available and use
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
-			fmt.Println("=== LAPeL Run ===\n")
+			fmt.Println("=== lapel run ===\n")
 
 			b := &wsl.DistBackend{}
 
