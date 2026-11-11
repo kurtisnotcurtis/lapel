@@ -1,0 +1,11 @@
+# Build output
+/bin/
+lapel.exe
+
+# Draft/internal docs (not part of main narrative)
+docs/.drafts/
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
