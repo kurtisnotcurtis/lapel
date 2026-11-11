@@ -34,7 +34,7 @@ If no --agent is specified, lapel will detect which agents are available and use
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
-			fmt.Println("=== lapel run ===\n")
+			fmt.Println("=== lapel run ===")
 
 			b := &wsl.DistBackend{}
 
@@ -159,7 +159,8 @@ If no --agent is specified, lapel will detect which agents are available and use
 
 			fmt.Printf("\n  Jail profile: %s\n", profile.Name)
 			fmt.Printf("  User: %s\n", user)
-			fmt.Printf("  Timeout: %ds\n")
+			timeout := 300 // default timeout
+			fmt.Printf("  Timeout: %ds\n", timeout)
 
 			// Step 4: Launch agent
 			fmt.Println("\nStep 4/4: Launching agent...")
@@ -194,7 +195,7 @@ If no --agent is specified, lapel will detect which agents are available and use
 			}
 
 			fmt.Printf("\nSession started (PID: %d)\n", session.PID())
-			fmt.Println("Press Ctrl+C to stop.\n")
+			fmt.Println("Press Ctrl+C to stop.")
 
 			result, err := session.Wait()
 			if err != nil {

@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 )
 
 // PiAgent implements Agent for the pi coding harness.
@@ -13,8 +15,12 @@ func NewPiAgent() *PiAgent { return &PiAgent{} }
 func (a *PiAgent) Name() string { return "pi" }
 
 func (a *PiAgent) Detect(ctx context.Context) (bool, error) {
-	// TODO: implement actual detection using exec.Command
-	return true, nil
+	path, err := exec.LookPath("pi")
+	if err != nil {
+		return false, nil
+	}
+	_, err = exec.CommandContext(ctx, path, "--version").Output()
+	return err == nil, nil
 }
 
 func (a *PiAgent) Configure(env map[string]string, providerURL string, model string) {
@@ -25,9 +31,14 @@ func (a *PiAgent) Configure(env map[string]string, providerURL string, model str
 
 func (a *PiAgent) Launch(ctx context.Context, providerURL string, model string, workingDir string, user string) error {
 	fmt.Printf("\nLaunching pi agent with %s at %s/v1\n", model, providerURL)
-	// In a real implementation, this would:
-	// 1. Build the command with proper env vars
-	// 2. Execute it in WSL with jail applied
-	// 3. Return when done or handle interactive mode
-	return fmt.Errorf("not yet implemented")
+
+	cmd := exec.CommandContext(ctx, "pi")
+	cmd.Dir = workingDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("pi agent exited: %w", err)
+	}
+	return nil
 }

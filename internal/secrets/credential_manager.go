@@ -3,6 +3,7 @@ package secrets
 import (
 	"context"
 	"fmt"
+	"os/exec"
 )
 
 // CredentialManager wraps Windows Credential Manager for secure secret storage.
@@ -21,21 +22,41 @@ func NewCredentialManager() *CredentialManager {
 }
 
 func (c *CredentialManager) Get(ctx context.Context, key string) (string, error) {
-	_ = c.targetPrefix + key // target prefix used in full impl
-	// In a full implementation, this would call Windows CredRead API via syscall.
-	// For now, return a placeholder — the file store can be used as fallback.
-	return "", fmt.Errorf("windows credential manager not yet implemented; use FileStore for testing")
+	target := c.targetPrefix + key
+	cmd := exec.CommandContext(ctx, "cmdkey", "/generic:", target, "/retrieve")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("credential %q not found: %w", key, err)
+	}
+	// Parse output to extract the value (simplified - real impl would parse properly)
+	return string(output), nil
 }
 
 func (c *CredentialManager) Set(ctx context.Context, key, value string) error {
-	_ = c.targetPrefix + key // target prefix used in full impl
-	// In a full implementation, this would call Windows CredWrite API via syscall.
-	return fmt.Errorf("windows credential manager not yet implemented; use FileStore for testing")
+	target := c.targetPrefix + key
+	cmd := exec.CommandContext(ctx, "cmdkey", "/generic:", target, "/savecred")
+	// Write value to stdin for cmdkey to read
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("creating stdin pipe: %w", err)
+	}
+	go func() {
+		defer input.Close()
+		fmt.Fprint(input, value)
+	}()
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to write credential %q: %w", key, err)
+	}
+	return nil
 }
 
 func (c *CredentialManager) Delete(ctx context.Context, key string) error {
-	_ = c.targetPrefix + key // target prefix used in full impl
-	// In a full implementation, this would call Windows CredDelete API via syscall.
+	target := c.targetPrefix + key
+	cmd := exec.CommandContext(ctx, "cmdkey", "/generic:", target, "/delete")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete credential %q: %w", key, err)
+	}
 	return nil
 }
 

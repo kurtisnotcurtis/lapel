@@ -40,7 +40,7 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
-			fmt.Println("=== lapel setup ===\n")
+			fmt.Println("=== lapel setup ===")
 
 			// Step 1: Quick doctor check
 			fmt.Println("Step 1/4: Checking WSL environment...")
