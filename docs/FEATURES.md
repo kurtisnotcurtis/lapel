@@ -1,12 +1,12 @@
-# LAPeL Features
+# lapel features
 
 ## The three pillars
 
-LAPeL solves three specific problems for power users running coding agents with local AI:
+lapel solves three specific problems for power users running coding agents with local AI:
 
 ### 1. Provider reachability 🥇
 
-Your inference server (LM Studio, Ollama) lives on Windows. Your agent lives in WSL. LAPeL verifies the connection from the *Linux side*, where it actually matters.
+Your inference server (LM Studio, Ollama) lives on Windows. Your agent lives in WSL. lapel verifies the connection from the *Linux side*, where it actually matters.
 
 - **Provider detection**: Identifies installed providers on your Windows host
 - **Runtime status**: Shows running state, port, bind address, loaded models
@@ -81,7 +81,7 @@ doctor → setup → run
 
 ## Power user escape hatch: declarative configuration
 
-For users who want more control, LAPeL supports a YAML manifest with drift detection and transactional apply/rollback. This is an escape hatch — the guided setup handles defaults well.
+For users who want more control, lapel supports a YAML manifest with drift detection and transactional apply/rollback. This is an escape hatch — the guided setup handles defaults well.
 
 ```bash
 lapel init                # scaffold LAPeL.yaml in current dir
@@ -92,7 +92,7 @@ lapel status              # compare live state against baseline over time
 
 **What's under the hood:**
 
-- **Manifest schema**: Single `LAPeL.yaml` describes desired state for distro, packages, jail, workspace, provider, agent
+- **Manifest schema**: Single `lapel.yaml` describes desired state for distro, packages, jail, workspace, provider, agent
 - **SQLite state store**: Persists the desired-state baseline per-project (in `.lapel/state.db`)
 - **Reconcile engine**: Detects drift between live reality and manifest, reports with actionable hints
 - **Transaction safety**: Partial failures roll back atomically
@@ -101,7 +101,7 @@ lapel status              # compare live state against baseline over time
 
 ## Configuration reference
 
-### Manifest schema (`LAPeL.yaml`)
+### Manifest schema (`lapel.yaml`)
 
 ```yaml
 schemaVersion: 1
@@ -142,7 +142,7 @@ env:
 
 ### Package management
 
-LAPeL maintains a minimal baseline package set optimized for agent workloads. The default baseline includes: git, curl, wget, ca-certificates, gnupg, unzip, zip, tmux, xxd, procps, iproute2, openssh-server, and more (~16 packages).
+lapel maintains a minimal baseline package set optimized for agent workloads. The default baseline includes: git, curl, wget, ca-certificates, gnupg, unzip, zip, tmux, xxd, procps, iproute2, openssh-server, and more (~16 packages).
 
 - **Baseline**: Override with `packages.baseline: []` to use defaults, or supply your own list
 - **Extras**: Add anything beyond the baseline with `packages.extras`
@@ -158,7 +158,7 @@ LAPeL maintains a minimal baseline package set optimized for agent workloads. Th
 | **Model recommendations** | Planned | "You have 12GB VRAM → try Q4_K_M Mistral 7B" — turns `doctor` into an onboarding advisor |
 | **Agent presets** | Planned | Pre-configured setups for Pi (lean), Claude Code (balanced), Copilot-style (full tooling) |
 | **Community setups** | Deferred | Collect anonymized configs to help new users avoid the "which model/settings" rabbit hole |
-| **LM Studio management** | Deferred | LAPeL as another llama.cpp wrapper — manage model downloads, serving, VRAM optimization from within LAPeL |
+| **LM Studio management** | Deferred | lapel as another llama.cpp wrapper — manage model downloads, serving, VRAM optimization from within lapel |
 
 ---
 
@@ -169,7 +169,7 @@ graph TD
     subgraph WindowsHost["Windows Host"]
         A["LM Studio / Ollama"]
         B["Ollama Service"]
-        C["LAPeL CLI"]
+        C["lapel CLI"]
     end
 
     subgraph WSL2Dist["WSL2 Distribution"]

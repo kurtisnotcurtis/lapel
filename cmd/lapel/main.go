@@ -65,7 +65,6 @@ func doctorCmd() *cobra.Command {
 				fmt.Printf("  wsl version: %s\n", status.Version)
 			}
 
-			fmt.Printf("[DEBUG] status.Available=%v\n", status.Available)
 
 			// Check kernel updates if WSL is available.
 			if status.Available {
