@@ -1,46 +1,41 @@
-# lapel manifest — declarative environment config.
-# See internal/domain/manifest.go for field documentation.
+# lapel desired-state manifest
+# See internal/config/manifest.go for field documentation.
 
-schemaVersion: 1
+apiVersion: lapel.dev/v1
+name: lapel-project
 
-distro:
-  name: Ubuntu-Lean
+environment:
+  distribution: Ubuntu-Lean
   base: ubuntu          # "ubuntu" or "debian"; defaults to "ubuntu"
   version: "24.04"      # pinned release; auto-selected default when omitted
-  defaultUser: kurt     # WSL default user (defaults to $USER)
-  systemd: true         # enables [boot] systemd=true in wsl.conf
-
-packages:
-  baseline:             # override defaults (nil = use built-in agent toolkit)
-    - git
-    - curl
-    - wget
-    - ca-certificates
-    - gnupg
-    - unzip
-    - zip
-    - tmux
-    - xxd
-    - procps
-    - iproute2
-    - openssh-server
-  extras:               # additional packages beyond baseline
+  packages:             # extra apt packages beyond the built-in agent toolkit
     - ripgrep
     - fd-find
     - tree
 
+provider:
+  name: local
+  type: lm-studio       # "lm-studio" | "ollama" | "openai-compatible"
+  baseURL: "http://127.0.0.1:1234"
+  connectionTimeout: 8s
+
+agent:
+  name: pi
+  provider: local
+
+workspace:
+  name: workspace
+  path: "."
+  importMode: bind      # "bind" or "copy"
+
 jail:
   name: developer
-  user: kurt            # defaults to distro.defaultUser
+  profile: developer
+  user: agent
   filesystem:
-    "C:\\Users\\Kurt\\Projects": read-write
-    "C:\\Users\\Kurt\\.ssh": read-only
+    "C:\\Users\\user\\Projects": read-write
     "C:\\Windows\\System32": deny
-  network: unrestricted # "unrestricted" | "outbound-only" | "none"
+  network: unrestricted
   processes:
-    privileged: false   # agent runs as non-root by default
-    timeoutSeconds: 300 # kill long-running processes after 5 min
-
-env:
-  TERM: xterm-256color
-  LANG: en_US.UTF-8
+    privileged: false
+    timeoutSeconds: 300

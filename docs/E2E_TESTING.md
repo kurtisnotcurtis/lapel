@@ -68,7 +68,7 @@ agents, err := agentMgr.DetectAll(ctx)
 //   claude: ✗ not found
 ```
 
-**Note:** Agent binaries (pi, copilot, claude) must be installed on the **Windows host**, not inside WSL. The detection uses `exec.LookPath` to check Windows PATH.
+**Note:** Agent binaries (`pi`, `github-copilot-cli`, `claude`) are detected **inside the WSL distribution** via `wsl.exe -d <distro> bash -lc "command -v <binary>"` (falling back to host `exec.LookPath` only when running natively on Linux).
 
 ## Inference Provider Testing
 
@@ -185,8 +185,8 @@ wsl -d tb-e2e-<timestamp> -- bash
 # Check what packages were installed
 dpkg -l | grep -E "ripgrep|git-filter-repo|tmux"
 
-# Verify agent binaries on Windows host
-where.exe pi  # or where.exe copilot, claude
+# Verify agent binaries inside the WSL distro
+wsl -d Ubuntu-Lean -- bash -lc "command -v pi || command -v claude || command -v github-copilot-cli"
 
 # Test LM Studio from WSL manually
 curl -s http://host.docker.internal:1234/v1/models | jq .
