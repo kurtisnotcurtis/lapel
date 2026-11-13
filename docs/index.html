@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>lapel — Local Agent Protocol Enhancement Layer</title>
+  <meta name="description" content="Bridge your Windows GPU (LM Studio / Ollama) to your coding agents in WSL2 and VS Code — lean, sandboxed, and hardware-tuned." />
+  <link rel="icon" type="image/svg+xml" href="assets/lapel-logo.svg" />
+  <style>
+    :root {
+      --bg: #f8f9fa;
+      --surface: #ffffff;
+      --surface-alt: #f1f3f5;
+      --border: #dee2e6;
+      --text: #1c1e21;
+      --text-muted: #5c6470;
+      --accent: #2f7d4f;
+      --accent-soft: rgba(47, 125, 79, 0.1);
+      --logo-stroke: #3a3a3a;
+      --code-bg: #161b22;
+      --code-text: #e6edf3;
+      --radius: 10px;
+      --max-w: 1160px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --surface: #161b22;
+        --surface-alt: #1c2128;
+        --border: #30363d;
+        --text: #e6edf3;
+        --text-muted: #8b949e;
+        --accent: #4caf73;
+        --accent-soft: rgba(76, 175, 115, 0.14);
+        --logo-stroke: #e6edf3;
+        --code-bg: #090c10;
+        --code-text: #e6edf3;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+    .brand:hover { text-decoration: none; }
+
+    .brand svg {
+      width: 28px;
+      height: 28px;
+      stroke: var(--logo-stroke);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 0.92rem;
+    }
+
+    .nav-links a { color: var(--text-muted); font-weight: 500; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    @media (max-width: 640px) {
+      .nav-links .hide-sm { display: none; }
+    }
+
+    /* Hero */
+    .hero {
+      padding: 72px 0 56px;
+      text-align: center;
+    }
+
+    .hero-logo {
+      width: 108px;
+      height: 108px;
+      margin: 0 auto 20px;
+      display: block;
+      stroke: var(--logo-stroke);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      letter-spacing: 0.02em;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2.2rem, 5vw, 3.2rem);
+      letter-spacing: -0.03em;
+      line-height: 1.15;
+    }
+
+    .hero p.lead {
+      max-width: 680px;
+      margin: 0 auto 28px;
+      font-size: 1.12rem;
+      color: var(--text-muted);
+    }
+
+    .cta-row {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      transition: transform 0.12s ease, border-color 0.12s ease;
+    }
+    .btn:hover { text-decoration: none; border-color: var(--text-muted); transform: translateY(-1px); }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+    .btn-primary:hover { border-color: var(--accent); opacity: 0.92; }
+
+    /* Sections */
+    section {
+      padding: 56px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.75rem;
+      letter-spacing: -0.02em;
+    }
+
+    .section-sub {
+      color: var(--text-muted);
+      margin: 0 0 32px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    @media (max-width: 960px) {
+      .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      .grid-4 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 1.08rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .card h3 code {
+      white-space: nowrap;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.82rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    /* Code blocks */
+    .code-wrap {
+      position: relative;
+      max-width: 720px;
+      margin: 0 auto;
+      text-align: left;
+    }
+
+    pre {
+      margin: 0;
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 18px 20px;
+      border-radius: var(--radius);
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88rem;
+      line-height: 1.55;
+      border: 1px solid var(--border);
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      padding: 4px 10px;
+      font-size: 0.78rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #e6edf3;
+      cursor: pointer;
+    }
+    .copy-btn:hover { background: rgba(255, 255, 255, 0.16); }
+
+    /* Journey */
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+
+    .step code {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .step p {
+      margin: 8px 0 0;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    /* Table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      font-size: 0.94rem;
+    }
+
+    th, td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--surface-alt);
+      font-weight: 600;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 36px 0;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+
+    /* YAML syntax highlighting */
+    .yk { color: #7ee787; }
+    .ys { color: #a5d6ff; }
+    .yn { color: #79c0ff; }
+    .yc { color: #8b949e; font-style: italic; }
+    .yp { color: #8b949e; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="#">
+        <svg viewBox="0 25 100 100" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M 46.5,116 C 34,102 21,84 9,65 L 21,60 L 9,55 L 14,39.5 C 30,31.5 70,32 86,40.5 L 91,56.5 L 79,61.5 L 91,66.5 C 79,85 65.5,102.5 52.5,116.8" />
+          <path d="M 46.5,116 C 41.5,95 39,79 37.2,65 C 36.2,57.2 37.5,50.5 42.5,47.5 C 38.8,47 35,46.2 31.5,45.2" />
+          <path d="M 52.5,116.8 C 57.5,95.5 60.5,80 62.3,66 C 63.3,58.2 61.8,51.5 56.8,48.5 C 60.5,48 64.3,47.2 67.8,46.2" />
+        </svg>
+        <span>lapel</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#pillars" class="hide-sm">Pillars</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#integrations" class="hide-sm">Integrations</a>
+        <a href="#manifest" class="hide-sm">Manifest</a>
+        <a href="FEATURES.md">Docs</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" style="border-top: none;">
+      <div class="container">
+        <svg class="hero-logo" viewBox="0 25 100 100" fill="none" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="lapel logo">
+          <path d="M 46.5,116 C 34,102 21,84 9,65 L 21,60 L 9,55 L 14,39.5 C 30,31.5 70,32 86,40.5 L 91,56.5 L 79,61.5 L 91,66.5 C 79,85 65.5,102.5 52.5,116.8" />
+          <path d="M 46.5,116 C 41.5,95 39,79 37.2,65 C 36.2,57.2 37.5,50.5 42.5,47.5 C 38.8,47 35,46.2 31.5,45.2" />
+          <path d="M 52.5,116.8 C 57.5,95.5 60.5,80 62.3,66 C 63.3,58.2 61.8,51.5 56.8,48.5 C 60.5,48 64.3,47.2 67.8,46.2" />
+        </svg>
+        <span class="badge">Open Source &middot; Apache 2.0 &middot; Windows + WSL2</span>
+        <h1>Local Agent Protocol Enhancement Layer</h1>
+        <p class="lead">
+          Bridge your Windows GPU (LM Studio / Ollama) to your coding agents in WSL2 and VS Code &mdash; lean, sandboxed, and hardware-tuned. No bloat. No guesswork. Just working local AI.
+        </p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#quickstart">Get Started</a>
+          <a class="btn" href="FEATURES.md">Read Feature Guide</a>
+        </div>
+
+        <div class="code-wrap">
+          <button class="copy-btn" data-copy="lapel doctor && lapel setup && lapel run">Copy</button>
+          <pre><code class="language-bash"><span class="yc"># 1. Check WSL, GPU/VRAM, model tiers &amp; provider reachability</span>
+<span class="yk">lapel</span> <span class="ys">doctor</span>
+
+<span class="yc"># 2. Provision Ubuntu-Lean, mount workspace &amp; apply jail policies</span>
+<span class="yk">lapel</span> <span class="ys">setup</span>
+
+<span class="yc"># 3. Launch your coding agent inside the sandboxed environment</span>
+<span class="yk">lapel</span> <span class="ys">run</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="pillars">
+      <div class="container">
+        <h2>Four pillars</h2>
+        <p class="section-sub">
+          Running local coding agents on Windows means bridging four gaps that break out of the box. <code>lapel</code> solves all four in one control plane.
+        </p>
+        <div class="grid-4">
+          <div class="card">
+            <h3><span class="num">1</span> Cross-boundary reachability</h3>
+            <p>Resolves the real Windows host gateway IP from <code>/proc/net/route</code> inside WSL2 and classifies connection-refused vs. timeout vs. bind-address errors from the Linux side.</p>
+          </div>
+          <div class="card">
+            <h3><span class="num">2</span><span>Lean WSL2 (<code>Ubuntu-Lean</code>)</span></h3>
+            <p>A minimal distro with only what coding agents need (<code>git</code>, <code>curl</code>, <code>tmux</code>, <code>ripgrep</code>, <code>sshd</code>). No GUI apps, no desktop bloat, and <code>PATH</code> filtered to prevent <code>/mnt/c</code> leakage.</p>
+          </div>
+          <div class="card">
+            <h3><span class="num">3</span> Sandboxing &amp; honest reporting</h3>
+            <p>Filesystem scoping, process timeouts, and non-root execution (<code>agent</code> user). Distinguishes controls that are actively <strong>enforced</strong>, <strong>requested</strong>, or <strong>unsupported</strong>.</p>
+          </div>
+          <div class="card">
+            <h3><span class="num">4</span> Hardware-aware config sync</h3>
+            <p>Detects GPU VRAM and system RAM to recommend model tiers, context windows, and batch sizes, syncing configs to your CLI agents and IDE extensions.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart">
+      <div class="container">
+        <h2>The user journey</h2>
+        <p class="section-sub">
+          Start interactively with three commands, or manage reproducible team environments declaratively via <code>lapel.yaml</code>.
+        </p>
+        <div class="journey">
+          <div class="step">
+            <code>lapel doctor</code>
+            <p>Verify WSL2 availability, GPU/VRAM specs, model tier recommendations, and provider reachability.</p>
+          </div>
+          <div class="step">
+            <code>lapel setup</code>
+            <p>Guided setup to verify providers, provision <code>Ubuntu-Lean</code>, mount your workspace, and configure jail policies.</p>
+          </div>
+          <div class="step">
+            <code>lapel run</code>
+            <p>Launch your coding agent (<code>pi</code>, <code>claude-code</code>, <code>copilot</code>) inside the sandboxed WSL environment.</p>
+          </div>
+          <div class="step">
+            <code>init / plan / apply</code>
+            <p>Declarative <code>lapel.yaml</code> lifecycle backed by SQLite drift detection (<code>.lapel/state.db</code>).</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="integrations">
+      <div class="container">
+        <h2>Supported providers &amp; agents</h2>
+        <p class="section-sub">Bring your own inference server and your own coding agent &mdash; <code>lapel</code> wires them together cleanly.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Supported Targets</th>
+              <th>How <code>lapel</code> Integrates</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Inference Providers</strong></td>
+              <td>LM Studio, Ollama</td>
+              <td>Detects Windows installation &amp; runtime status; lists loaded models; resolves WSL-to-Windows host gateway IP</td>
+            </tr>
+            <tr>
+              <td><strong>CLI Coding Agents</strong></td>
+              <td>Pi, Claude Code, GitHub Copilot CLI</td>
+              <td>Auto-detects installed binaries in WSL; injects resolved provider endpoint, active model, and jail environment</td>
+            </tr>
+            <tr>
+              <td><strong>VS Code Plugins</strong> <em>(in progress)</em></td>
+              <td>Kilo Code, Continue, Cline</td>
+              <td>Generates plugin config files from live provider models with VRAM-aware context windows</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="manifest">
+      <div class="container">
+        <h2>Declarative configuration (<code>lapel.yaml</code>)</h2>
+        <p class="section-sub">Scaffold a reproducible project manifest with <code>lapel init</code> and apply it with <code>lapel apply</code>.</p>
+        <div class="code-wrap" style="max-width: 100%;">
+          <button class="copy-btn" data-copy="lapel init && lapel plan && lapel apply">Copy CLI</button>
+          <pre><code class="language-yaml"><span class="yk">apiVersion</span><span class="yp">:</span> <span class="ys">lapel.dev/v1</span>
+<span class="yk">name</span><span class="yp">:</span> <span class="ys">my-project</span>
+
+<span class="yk">environment</span><span class="yp">:</span>
+  <span class="yk">distribution</span><span class="yp">:</span> <span class="ys">Ubuntu-Lean</span>
+  <span class="yk">base</span><span class="yp">:</span> <span class="ys">ubuntu</span>
+  <span class="yk">version</span><span class="yp">:</span> <span class="ys">"24.04"</span>
+  <span class="yk">packages</span><span class="yp">:</span>
+    <span class="yp">-</span> <span class="ys">fd-find</span>
+    <span class="yp">-</span> <span class="ys">tree</span>
+
+<span class="yk">provider</span><span class="yp">:</span>
+  <span class="yk">name</span><span class="yp">:</span> <span class="ys">local</span>
+  <span class="yk">type</span><span class="yp">:</span> <span class="ys">lm-studio</span>
+  <span class="yk">baseURL</span><span class="yp">:</span> <span class="ys">"http://127.0.0.1:1234"</span>
+  <span class="yk">connectionTimeout</span><span class="yp">:</span> <span class="yn">8s</span>
+
+<span class="yk">agent</span><span class="yp">:</span>
+  <span class="yk">name</span><span class="yp">:</span> <span class="ys">pi</span>
+  <span class="yk">provider</span><span class="yp">:</span> <span class="ys">local</span>
+
+<span class="yk">workspace</span><span class="yp">:</span>
+  <span class="yk">name</span><span class="yp">:</span> <span class="ys">my-project</span>
+  <span class="yk">path</span><span class="yp">:</span> <span class="ys">"."</span>
+  <span class="yk">importMode</span><span class="yp">:</span> <span class="ys">bind</span>   <span class="yc"># "bind" for live bind mounts or "copy" for isolated rsync copies</span>
+
+<span class="yk">jail</span><span class="yp">:</span>
+  <span class="yk">name</span><span class="yp">:</span> <span class="ys">developer</span>
+  <span class="yk">profile</span><span class="yp">:</span> <span class="ys">developer</span>
+  <span class="yk">user</span><span class="yp">:</span> <span class="ys">agent</span>
+  <span class="yk">filesystem</span><span class="yp">:</span>
+    <span class="yk">"C:\\Users\\user\\Projects"</span><span class="yp">:</span> <span class="ys">read-write</span>
+    <span class="yk">"C:\\Windows\\System32"</span><span class="yp">:</span> <span class="ys">deny</span>
+  <span class="yk">network</span><span class="yp">:</span> <span class="ys">unrestricted</span>
+  <span class="yk">processes</span><span class="yp">:</span>
+    <span class="yk">privileged</span><span class="yp">:</span> <span class="yn">false</span>
+    <span class="yk">timeoutSeconds</span><span class="yp">:</span> <span class="yn">300</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div class="container">
+        <h2>Local-first privacy</h2>
+        <p class="section-sub">
+          Hardware detection and baseline model recommendations run <strong>100% locally</strong> during <code>lapel doctor</code> and <code>lapel setup</code>.
+          Optional community benchmark sharing (<code>lapel community</code>) is strictly opt-in via <code>LAPEL_COMMUNITY_ENABLED=true</code>, and can be pointed at a self-hosted backend via <code>LAPEL_COMMUNITY_ENDPOINT</code>.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>&copy; 2026 lapel &middot; Licensed under Apache 2.0</div>
+      <div class="footer-links">
+        <a href="FEATURES.md">Feature Guide</a>
+        <a href="COMMUNITY_DESIGN.md">Community Design</a>
+        <a href="E2E_TESTING.md">E2E Testing</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll(".copy-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const text = btn.getAttribute("data-copy");
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.textContent;
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        } catch (_) {}
+      });
+    });
+  </script>
+</body>
+</html>
