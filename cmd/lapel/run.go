@@ -8,6 +8,7 @@ import (
 
 	"lapel/internal/agent"
 	"lapel/internal/backend/wsl"
+	"lapel/internal/config"
 	"lapel/internal/domain"
 	"lapel/internal/jail"
 	"lapel/internal/provider"
@@ -35,6 +36,23 @@ If no --agent is specified, lapel will detect which agents are available and use
 			ctx := cmd.Context()
 
 			fmt.Println("=== lapel run ===")
+
+			// Load lapel.yaml if present to apply declarative defaults when CLI flags aren't explicitly set.
+			m, manifestErr := config.LoadEffective("")
+			if manifestErr == nil && m != nil {
+				if !cmd.Flags().Changed("agent") && m.Agent.Name != "" {
+					agentName = m.Agent.Name
+				}
+				if !cmd.Flags().Changed("user") && m.Jail.User != "" {
+					user = m.Jail.User
+				}
+				if !cmd.Flags().Changed("timeout") && m.Jail.Processes.TimeoutSeconds > 0 {
+					timeout = m.Jail.Processes.TimeoutSeconds
+				}
+				if !cmd.Flags().Changed("workspace") && m.Workspace.Path != "" {
+					wsPath = m.Workspace.Path
+				}
+			}
 
 			b := &wsl.DistBackend{}
 
@@ -123,15 +141,22 @@ If no --agent is specified, lapel will detect which agents are available and use
 				return fmt.Errorf("no running provider found. Start LM Studio or Ollama first.")
 			}
 
-			providerURL := fmt.Sprintf("http://localhost:%d", runningProvider.Port)
+			hostIP, err := provider.HostIP(ctx)
+			if err != nil || hostIP == "" {
+				fmt.Printf("  ⚠ Could not resolve WSL host gateway IP (%v); falling back to localhost\n", err)
+				hostIP = "localhost"
+			}
+			providerURL := fmt.Sprintf("http://%s:%d", hostIP, runningProvider.Port)
 			model := ""
-			if len(runningProvider.Models) > 0 {
+			if manifestErr == nil && m != nil && m.Provider.Model != "" {
+				model = m.Provider.Model
+			} else if len(runningProvider.Models) > 0 {
 				model = runningProvider.Models[0]
 			} else {
 				model = "default"
 			}
 
-			fmt.Printf("  ✓ Provider: %s on port %d\n", runningProvider.Name, runningProvider.Port)
+			fmt.Printf("  ✓ Provider: %s at %s\n", runningProvider.Name, providerURL)
 			fmt.Printf("  ✓ Model: %s\n", model)
 
 			// Step 3: Configure agent environment
@@ -144,14 +169,29 @@ If no --agent is specified, lapel will detect which agents are available and use
 			}
 
 			// Build jail profile and apply it
+			fsPolicy := map[string]string{
+				windowsPathToLinux(wsPath): "read-write",
+			}
+			netPolicy := jail.NetworkUnrestricted
+			profileName := "agent-session"
+			if manifestErr == nil && m != nil {
+				if m.Jail.Profile != "" {
+					profileName = m.Jail.Profile
+				}
+				for k, v := range m.Jail.Filesystem {
+					fsPolicy[windowsPathToLinux(k)] = v
+				}
+				if m.Jail.Network != "" {
+					netPolicy = jail.NetworkConfig(m.Jail.Network)
+				}
+			}
+
 			profile := jail.Profile{
-				Name: "agent-session",
-				User: user,
-				Processes: jail.ProcessConfig{TimeoutSeconds: timeout},
-				Filesystem: map[string]string{
-					windowsPathToLinux(wsPath): "read-write",
-				},
-				Network: jail.NetworkUnrestricted,
+				Name:       profileName,
+				User:       user,
+				Processes:  jail.ProcessConfig{TimeoutSeconds: timeout},
+				Filesystem: fsPolicy,
+				Network:    netPolicy,
 			}
 
 			enforcer := jail.NewEnforcer(profile)
@@ -159,22 +199,13 @@ If no --agent is specified, lapel will detect which agents are available and use
 
 			fmt.Printf("\n  Jail profile: %s\n", profile.Name)
 			fmt.Printf("  User: %s\n", user)
-			timeout := 300 // default timeout
 			fmt.Printf("  Timeout: %ds\n", timeout)
 
 			// Step 4: Launch agent
 			fmt.Println("\nStep 4/4: Launching agent...")
 
-			// Determine command to run based on agent type
-			var cmdStr string
-			switch selectedAgent.Name() {
-			case "pi":
-				cmdStr = "pi"
-			case "claude-code":
-				cmdStr = "claude"
-			case "copilot":
-				cmdStr = "github-copilot-cli"
-			default:
+			cmdStr := selectedAgent.Binary()
+			if cmdStr == "" {
 				cmdStr = "bash"
 			}
 
@@ -182,7 +213,7 @@ If no --agent is specified, lapel will detect which agents are available and use
 				Dist:       wsl.Dist,
 				User:       user,
 				WorkingDir: "/home/" + user,
-				Cmd:        []string{"bash", "-c", cmdStr},
+				Cmd:        enforcer.WrapCommand([]string{"bash", "-c", cmdStr}),
 				Env:        jailEnv,
 				Stdin:      true,
 			}

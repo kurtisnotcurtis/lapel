@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"lapel/internal/backend/wsl"
 )
 
 // ImportMode controls how a workspace is imported into WSL2.
@@ -13,15 +17,9 @@ type ImportMode string
 
 const (
 	// ModeCopy mirrors the host directory into WSL2 native storage using rsync -a.
-	// This gives optimal performance for file-heavy operations (git status, linters,
-	// build toolchains) because everything lives on ext4 with zero cross-filesystem
-	// I/O penalties. Git metadata is fully preserved via rsync's archive mode.
 	ModeCopy ImportMode = "copy"
 
-	// ModeBind mounts the host directory directly into WSL2 using a bind mount.
-	// This gives live editing without an import step, but suffers from cross-filesystem
-	// I/O penalties on NTFS/ext4 boundaries. Use only when host-side live editing
-	// without import is mandatory.
+	// ModeBind links or bind-mounts the host directory into WSL2.
 	ModeBind ImportMode = "bind"
 )
 
@@ -33,6 +31,9 @@ type Importer struct {
 
 // NewImporter creates a new workspace importer with the given resolver and user.
 func NewImporter(resolver *PathResolver, user string) *Importer {
+	if user == "" {
+		user = "agent"
+	}
 	return &Importer{
 		resolver: resolver,
 		user:     user,
@@ -42,15 +43,21 @@ func NewImporter(resolver *PathResolver, user string) *Importer {
 // ImportResult captures what happened during an import operation.
 type ImportResult struct {
 	Mode      ImportMode
-	GuestPath string // where the workspace lives in WSL2
+	GuestPath string // where the workspace lives in WSL2 (always forward-slash Linux path)
 	HostPath  string // the source path on Windows host
-	Synced    bool   // whether rsync completed successfully (copy mode only)
+	Synced    bool   // whether import completed successfully
+}
+
+// runGuestScript executes a shell script inside WSL when running on Windows,
+// or directly via bash on native Linux.
+func runGuestScript(script string) ([]byte, error) {
+	if runtime.GOOS == "windows" {
+		return exec.Command("wsl.exe", "-d", wsl.Dist, "--", "bash", "-lc", script).CombinedOutput()
+	}
+	return exec.Command("bash", "-lc", script).CombinedOutput()
 }
 
 // Import performs a workspace import according to the specified mode.
-//
-// For ModeCopy: runs `rsync -a --delete <host> <guest>` to mirror the directory.
-// For ModeBind: creates a bind mount at the guest path pointing to the host path.
 func (imp *Importer) Import(hostPath string, name string, mode ImportMode) (*ImportResult, error) {
 	switch mode {
 	case ModeCopy:
@@ -63,38 +70,28 @@ func (imp *Importer) Import(hostPath string, name string, mode ImportMode) (*Imp
 }
 
 // importCopy mirrors the host directory into WSL2 native storage using rsync -a.
-// This preserves Git metadata (history, refs, objects) and gives optimal ext4 performance.
 func (imp *Importer) importCopy(hostPath string, name string) (*ImportResult, error) {
 	guestBase := GuestHomePath(imp.user, DefaultImportTarget)
-	guestPath := filepath.Join(guestBase, name)
+	guestPath := path.Join(guestBase, name)
 
-	// Ensure the target directory exists.
-	if err := os.MkdirAll(guestPath, 0o755); err != nil {
-		return nil, fmt.Errorf("creating import target: %w", err)
+	absHost, err := filepath.Abs(hostPath)
+	if err != nil {
+		absHost = hostPath
 	}
-
-	// Convert host path to guest format for rsync.
-	guestHostPath, err := imp.resolver.HostToGuest(hostPath)
+	guestHostPath, err := imp.resolver.HostToGuest(absHost)
 	if err != nil {
 		return nil, fmt.Errorf("converting host path: %w", err)
 	}
 
-	// Build the rsync command with archive mode and delete for sync.
-	// rsync -a preserves permissions, timestamps, symlinks, etc.
-	// --delete removes files in destination that don't exist in source.
-	cmd := exec.Command("bash", "-c", fmt.Sprintf(
-		"rsync -a --delete %q/ %q/",
-		guestHostPath, guestPath,
-	))
-
-	output, err := cmd.CombinedOutput()
+	script := fmt.Sprintf("mkdir -p %q && rsync -a --delete %q/ %q/", guestPath, guestHostPath, guestPath)
+	output, err := runGuestScript(script)
 	if err != nil {
 		return &ImportResult{
 			Mode:      ModeCopy,
 			GuestPath: guestPath,
 			HostPath:  hostPath,
 			Synced:    false,
-		}, fmt.Errorf("rsync failed: %w\noutput: %s", err, string(output))
+		}, fmt.Errorf("rsync failed: %w\noutput: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	return &ImportResult{
@@ -105,33 +102,30 @@ func (imp *Importer) importCopy(hostPath string, name string) (*ImportResult, er
 	}, nil
 }
 
-// importBind creates a bind mount at the guest path pointing to the host path.
-// This gives live editing without an import step but has cross-filesystem I/O costs.
+// importBind links the already-mounted /mnt/<drive>/... path to the guest workspace
+// directory inside WSL (avoiding interactive root password prompts for mount --bind).
 func (imp *Importer) importBind(hostPath string, name string) (*ImportResult, error) {
 	guestBase := GuestHomePath(imp.user, DefaultImportTarget)
-	guestPath := filepath.Join(guestBase, name)
+	guestPath := path.Join(guestBase, name)
 
-	// Ensure the mount point exists.
-	if err := os.MkdirAll(guestPath, 0o755); err != nil {
-		return nil, fmt.Errorf("creating bind mount point: %w", err)
+	absHost, err := filepath.Abs(hostPath)
+	if err != nil {
+		absHost = hostPath
 	}
-
-	// Convert host path to guest format for the bind mount source.
-	guestHostPath, err := imp.resolver.HostToGuest(hostPath)
+	guestHostPath, err := imp.resolver.HostToGuest(absHost)
 	if err != nil {
 		return nil, fmt.Errorf("converting host path: %w", err)
 	}
 
-	// Use mount --bind to create the bind mount.
-	cmd := exec.Command("sudo", "mount", "--bind", guestHostPath, guestPath)
-	output, err := cmd.CombinedOutput()
+	script := fmt.Sprintf("mkdir -p %q && ln -sfn %q %q", guestBase, guestHostPath, guestPath)
+	output, err := runGuestScript(script)
 	if err != nil {
 		return &ImportResult{
 			Mode:      ModeBind,
 			GuestPath: guestPath,
 			HostPath:  hostPath,
 			Synced:    false,
-		}, fmt.Errorf("bind mount failed: %w\noutput: %s", err, string(output))
+		}, fmt.Errorf("bind link failed: %w\noutput: %s", err, strings.TrimSpace(string(output)))
 	}
 
 	return &ImportResult{
@@ -142,20 +136,16 @@ func (imp *Importer) importBind(hostPath string, name string) (*ImportResult, er
 	}, nil
 }
 
-// Remove cleans up an imported workspace. For copy mode, this removes the
-// mirrored directory; for bind mode, it unmounts and optionally removes the mount point.
+// Remove cleans up an imported workspace inside the guest.
 func (imp *Importer) Remove(name string, mode ImportMode) error {
-	guestPath := filepath.Join(GuestHomePath(imp.user, DefaultImportTarget), name)
-
+	guestPath := imp.Path(name, mode)
 	switch mode {
-	case ModeCopy:
-		return os.RemoveAll(guestPath)
-	case ModeBind:
-		cmd := exec.Command("sudo", "umount", guestPath)
-		if _, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("unmount failed: %w", err)
+	case ModeCopy, ModeBind:
+		out, err := runGuestScript(fmt.Sprintf("rm -rf %q", guestPath))
+		if err != nil {
+			return fmt.Errorf("removing guest workspace %s: %w (%s)", guestPath, err, strings.TrimSpace(string(out)))
 		}
-		return os.Remove(guestPath)
+		return nil
 	default:
 		return fmt.Errorf("unsupported mode: %s", mode)
 	}
@@ -163,14 +153,18 @@ func (imp *Importer) Remove(name string, mode ImportMode) error {
 
 // Exists checks whether a workspace exists at the expected guest path.
 func (imp *Importer) Exists(name string, mode ImportMode) bool {
-	guestPath := filepath.Join(GuestHomePath(imp.user, DefaultImportTarget), name)
-	info, err := os.Stat(guestPath)
-	return err == nil && info.IsDir()
+	guestPath := imp.Path(name, mode)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(guestPath)
+		return err == nil && info.IsDir()
+	}
+	_, err := runGuestScript(fmt.Sprintf("test -e %q", guestPath))
+	return err == nil
 }
 
-// Path returns the guest path for a workspace with the given name and mode.
+// Path returns the forward-slash Linux guest path for a workspace.
 func (imp *Importer) Path(name string, mode ImportMode) string {
-	return filepath.Join(GuestHomePath(imp.user, DefaultImportTarget), name)
+	return path.Join(GuestHomePath(imp.user, DefaultImportTarget), name)
 }
 
 // ValidateHostPath checks that a host path exists and is accessible.
@@ -191,12 +185,18 @@ func ValidateHostPath(hostPath string) error {
 
 // ValidateGuestPath checks that a guest path exists and is accessible from WSL2.
 func ValidateGuestPath(guestPath string) error {
-	info, err := os.Stat(guestPath)
-	if err != nil {
-		return fmt.Errorf("guest path not accessible: %w", err)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(guestPath)
+		if err != nil {
+			return fmt.Errorf("guest path not accessible: %w", err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("guest path is not a directory: %s", guestPath)
+		}
+		return nil
 	}
-	if !info.IsDir() {
-		return fmt.Errorf("guest path is not a directory: %s", guestPath)
+	if _, err := runGuestScript(fmt.Sprintf("test -d %q", guestPath)); err != nil {
+		return fmt.Errorf("guest path not accessible in WSL: %s", guestPath)
 	}
 	return nil
 }

@@ -1,6 +1,6 @@
 // Package workspace provides Win/Lin path resolution and workspace import logic
 // for lapel. It handles the conversion between Windows host paths (e.g.,
-// C:\Users\kurt\projects) and WSL2 guest paths (e.g., /mnt/c/Users/kurt/projects
+// C:\Users\user\projects) and WSL2 guest paths (e.g., /mnt/c/Users/user/projects
 // or /home/agent/workspace), as well as the actual import process using rsync -a
 // for copy mode or bind mounts for bind mode.
 //
@@ -53,7 +53,7 @@ func (r *PathResolver) SetHostDriveLetter(letter string) {
 // HostToGuest converts a Windows path to its WSL2 equivalent.
 //
 // Examples:
-//   - "C:\Users\kurt\projects" → "/mnt/c/Users/kurt/projects"
+//   - "C:\Users\user\projects" → "/mnt/c/Users/user/projects"
 //   - "D:\\data\\repo.git"     → "/mnt/d/data/repo.git"
 //   - "/home/agent/workspace"  → "/home/agent/workspace" (passthrough for already-Linux paths)
 func (r *PathResolver) HostToGuest(hostPath string) (string, error) {
@@ -84,7 +84,7 @@ func (r *PathResolver) HostToGuest(hostPath string) (string, error) {
 // GuestToHost converts a WSL2 path back to its Windows equivalent.
 //
 // Examples:
-//   - "/mnt/c/Users/kurt/projects" → "C:\\Users\\kurt\\projects"
+//   - "/mnt/c/Users/user/projects" → "C:\\Users\\user\\projects"
 //   - "/home/agent/workspace"      → "" (not a host path, returns empty)
 func (r *PathResolver) GuestToHost(guestPath string) (string, error) {
 	if !strings.HasPrefix(guestPath, MntPrefix) {

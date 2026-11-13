@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // LMStudio implements Manager for the LM Studio inference provider.
@@ -26,17 +28,31 @@ func NewLMStudio(distro ...string) *LMStudio {
 
 func (l *LMStudio) Name() string { return "lm-studio" }
 
-// Detect checks if LM Studio is available by verifying both the `lms` CLI exists AND the server is running.
+// candidateBaseURLs returns candidate base URLs (127.0.0.1 and resolved WSL host IP)
+// so HTTP probes work whether lapel runs on the Windows host or inside WSL NAT mode.
+func candidateBaseURLs(ctx context.Context, port int) []string {
+	urls := []string{fmt.Sprintf("http://127.0.0.1:%d", port)}
+	if hostIP, err := HostIP(ctx); err == nil && hostIP != "" && hostIP != "127.0.0.1" {
+		urls = append(urls, fmt.Sprintf("http://%s:%d", hostIP, port))
+	}
+	return urls
+}
+
+// Detect checks if LM Studio is available via HTTP API on port 1234 or the `lms` CLI.
 func (l *LMStudio) Detect(ctx context.Context) (bool, error) {
-	// First check if lms CLI is available
+	if models, err := l.fetchModelsHTTP(ctx, 1234); err == nil && models != nil {
+		return true, nil
+	}
+
+	// Fallback: check if `lms` CLI is available on host or in WSL.
+	if _, err := exec.LookPath("lms"); err == nil {
+		return true, nil
+	}
 	cmd := exec.CommandContext(ctx, "wsl.exe", "-d", l.dist, "bash", "-c", "command -v lms")
-	if out, err := cmd.Output(); err != nil {
-		return false, &ErrNotInstalled{Name: "LM Studio"}
-	} else if len(strings.TrimSpace(string(out))) == 0 {
+	if out, err := cmd.Output(); err != nil || len(strings.TrimSpace(string(out))) == 0 {
 		return false, &ErrNotInstalled{Name: "LM Studio"}
 	}
 
-	// Then check if server is actually running
 	statusCmd := exec.CommandContext(ctx, "wsl.exe", "-d", l.dist, "bash", "-c", "lms server status --json 2>/dev/null")
 	out, err := statusCmd.Output()
 	if err != nil {
@@ -53,24 +69,34 @@ func (l *LMStudio) Detect(ctx context.Context) (bool, error) {
 	return result.Running, nil
 }
 
-// Status returns runtime status for LM Studio. It queries the Windows host via wsl.exe.
+// Status returns runtime status for LM Studio, including any loaded models.
 func (l *LMStudio) Status(ctx context.Context) (*ProviderStatus, error) {
 	status := &ProviderStatus{
-		Name: "LM Studio",
-		Type: "lm-studio",
+		Name:     "LM Studio",
+		Type:     "lm-studio",
+		Port:     1234,
+		BindAddr: "127.0.0.1",
 	}
 
-	// Check if lms CLI is available
+	// Fast path: probe the HTTP /v1/models endpoint directly.
+	if models, err := l.fetchModelsHTTP(ctx, status.Port); err == nil {
+		status.Installed = true
+		status.Running = true
+		status.Models = models
+		return status, nil
+	}
+
+	// Fallback to CLI detection.
 	installed, err := l.Detect(ctx)
 	if err != nil {
-		return status, fmt.Errorf("detect failed: %w", err)
+		status.Error = err.Error()
+		return status, nil
 	}
 	status.Installed = installed
 	if !installed {
 		return status, nil
 	}
 
-	// Run `lms server status --json` to get server state
 	cmd := exec.CommandContext(ctx, "wsl.exe", "-d", l.dist, "bash", "-c", "lms server status --json 2>/dev/null")
 	out, err := cmd.Output()
 	if err != nil {
@@ -88,11 +114,14 @@ func (l *LMStudio) Status(ctx context.Context) (*ProviderStatus, error) {
 	}
 
 	status.Running = result.Running
-	status.Port = result.Port
-	if status.Port == 0 {
-		status.Port = 1234 // default
+	if result.Port > 0 {
+		status.Port = result.Port
 	}
-	status.BindAddr = "127.0.0.1" // LM Studio defaults to localhost-only
+	if status.Running {
+		if models, err := l.fetchModelsHTTP(ctx, status.Port); err == nil {
+			status.Models = models
+		}
+	}
 
 	return status, nil
 }
@@ -117,21 +146,46 @@ func (l *LMStudio) Stop(ctx context.Context) error {
 	return nil
 }
 
-// ListModels returns available model identifiers by querying the LM Studio API.
+// ListModels returns available model identifiers by querying the LM Studio OpenAI-compatible API.
 func (l *LMStudio) ListModels(ctx context.Context) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "wsl.exe", "-d", l.dist, "bash", "-c",
-		"curl -s http://localhost:1234/v1/models 2>/dev/null | grep -o '\"id\":\"[^\"]*\"' | cut -d'\"' -f4")
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("list models failed: %v", err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	var models []string
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			models = append(models, line)
+	return l.fetchModelsHTTP(ctx, 1234)
+}
+
+func (l *LMStudio) fetchModelsHTTP(ctx context.Context, port int) ([]string, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	var lastErr error
+	for _, base := range candidateBaseURLs(ctx, port) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
+		if err != nil {
+			lastErr = err
+			continue
 		}
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var payload struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		decodeErr := json.NewDecoder(resp.Body).Decode(&payload)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK || decodeErr != nil {
+			lastErr = fmt.Errorf("unexpected response from %s/v1/models (status %d)", base, resp.StatusCode)
+			continue
+		}
+		models := make([]string, 0, len(payload.Data))
+		for _, m := range payload.Data {
+			if id := strings.TrimSpace(m.ID); id != "" {
+				models = append(models, id)
+			}
+		}
+		return models, nil
 	}
-	return models, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("lm-studio API unreachable")
+	}
+	return nil, lastErr
 }

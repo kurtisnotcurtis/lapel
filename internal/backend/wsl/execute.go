@@ -63,7 +63,7 @@ func runRoot(ctx context.Context, dist, script string) (string, error) {
 
 // buildScript composes a single safe command line from a working directory, an
 // optional env map and the (already-split) command array. The whole result is
-// forwarded to `wsl.exe bash -c '<script>'`, which WSL reliably passes through.
+// forwarded to `wsl.exe bash` via stdin, which WSL reliably passes through.
 func buildScript(workdir string, env map[string]string, cmd []string) string {
 	var b strings.Builder
 	for k, v := range env {
@@ -77,6 +77,31 @@ func buildScript(workdir string, env map[string]string, cmd []string) string {
 			b.WriteByte(' ')
 		}
 		b.WriteString(shellQuote(a))
+	}
+	return b.String()
+}
+
+// buildLaunchScript composes the bootstrap script for an interactive session
+// launched under setsid. It records the session leader PID (== PGID) to pgFile,
+// exports environment variables, changes to workdir, and finally replaces the
+// shell with the target command via `exec` so the target command inherits the
+// session leader PID/PGID without double-quoting the compound script.
+func buildLaunchScript(pgFile, workdir string, env map[string]string, cmd []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "echo $$ > %s\n", shellQuote(pgFile))
+	for k, v := range env {
+		fmt.Fprintf(&b, "export %s=%s\n", shellQuote(k), shellQuote(v))
+	}
+	if workdir != "" {
+		fmt.Fprintf(&b, "cd %s || exit 1\n", shellQuote(workdir))
+	}
+	if len(cmd) > 0 {
+		b.WriteString("exec")
+		for _, a := range cmd {
+			b.WriteByte(' ')
+			b.WriteString(shellQuote(a))
+		}
+		b.WriteByte('\n')
 	}
 	return b.String()
 }
@@ -155,9 +180,7 @@ func (b *DistBackend) Launch(ctx context.Context, req domain.ExecRequest) (*Proc
 	tag := randTag()
 	pgFile := "/tmp/lapel-" + tag + ".pg"
 	scriptPath := "/tmp/lapel-" + tag + ".sh"
-	userScript := buildScript(req.WorkingDir, req.Env, req.Cmd)
-	// Session leader: record its pid (== pgid), then exec the user command.
-	inner := fmt.Sprintf("echo $$ > %s; exec %s", shellQuote(pgFile), shellQuote(userScript))
+	inner := buildLaunchScript(pgFile, req.WorkingDir, req.Env, req.Cmd)
 	// The bootstrap cannot travel as a -c argument (WSL mangles $(...) in argv,
 	// verified 2026-11) and stdin is reserved for interactive input, so write
 	// it to a file first via a heredoc. The quoted delimiter keeps the content
@@ -185,6 +208,10 @@ func (b *DistBackend) Launch(ctx context.Context, req domain.ExecRequest) (*Proc
 	if err != nil {
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
+	errPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stderr pipe: %w", err)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start wsl.exe: %w", err)
 	}
@@ -196,6 +223,7 @@ func (b *DistBackend) Launch(ctx context.Context, req domain.ExecRequest) (*Proc
 
 	p := &Process{cmd: cmd, pgid: pgid, pgFile: pgFile, tag: tag, stdin: stdin, done: make(chan struct{}), waitCh: make(chan waitOutcome, 1)}
 	go func() { io.Copy(os.Stdout, out) }()
+	go func() { io.Copy(os.Stderr, errPipe) }()
 	go func() {
 		res, err := waitResult(cmd.Wait())
 		p.closeW.Do(func() { close(p.done) })

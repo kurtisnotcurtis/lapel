@@ -2,137 +2,176 @@
 
 **Local Agent Protocol Enhancement Layer**
 
-Get local AI working in WSL — properly.
+Bridge your Windows GPU (LM Studio / Ollama) to your coding agents in WSL2 and VS Code — lean, sandboxed, and hardware-tuned.
 
-lapel gives you a lean, purpose-built Linux environment optimized for agent workloads, makes sure your inference provider is actually reachable from inside WSL, and keeps your coding agent sandboxed so it doesn't eat your Windows files.
+`lapel` gives you a purpose-built minimal Linux environment optimized for coding agents, guarantees your Windows inference server is reachable from inside WSL, syncs VRAM-tuned model configs to your CLI agents and IDE extensions, and scopes filesystem access so an autonomous agent doesn't eat your Windows files.
 
 No bloat. No guesswork. Just working local AI.
 
+---
+
 ## The problem
 
-Running a coding agent with a local model on Windows means bridging two worlds that don't agree:
+Running a coding agent with a local model on Windows means bridging four gaps that break out of the box:
 
-- **LM Studio runs on Windows**, but your agent runs in WSL. Does WSL actually see the server? The NAT gateway IP changes, `resolv.conf` lies to you, mirrored mode breaks in WSL 3.x. You might think your provider is reachable when it isn't.
-- **Stock Ubuntu from the Store** is a general-purpose OS living inside Windows — systemd services, background daemons, full PATH with `/mnt/c`, GUI apps. It's eating into the RAM and CPU your inference server is also competing for.
-- **Agents delete things.** A coding agent that `rm -rf`s your whole C: drive because you didn't scope it properly is a real fear. Sandboxing isn't optional.
+1. **The Network Boundary breaks**: LM Studio and Ollama run on Windows, while CLI agents run in WSL2. The NAT gateway IP changes across reboots, `resolv.conf` lies, and mirrored networking breaks local port bindings in WSL 3.x.
+2. **The Resource Budget clashes**: Stock Ubuntu from the Microsoft Store is a general-purpose desktop OS living inside Windows — systemd services, background daemons, `/mnt/c` `PATH` leakage, and GUI apps eating 1–3 GB of RAM that your inference server needs for KV cache.
+3. **The Config Matrix is manual & fragile**: Every time you load a new model, you have to manually rewrite JSON endpoints and guess context windows across **Pi, Claude Code, Kilo Code, Continue, or Cline** — hoping your batch size and context cap won't OOM your GPU.
+4. **The Blast Radius is unscoped**: Coding agents execute shell commands autonomously. Giving an experimental local model unscoped access to `/mnt/c` is an accident waiting to happen.
 
-It solves these. Specifically.
+`lapel` solves all four in one control plane.
 
-## Three pillars
+---
 
-### 1. Provider reachability
+## Four pillars
 
-Your inference server (LM Studio, Ollama) lives on Windows. Your agent lives in WSL. lapel verifies the connection from the *Linux side*, where it actually matters — not just "is port 1234 open?" but "can I reach the host through NAT, and what's the actual gateway IP right now?"
+### 1. Cross-boundary provider reachability
 
-```bash
-lapel doctor          # verify prerequisites
-lapel provider reachability   # probe from inside WSL
-```
-
-### 2. Lean environment
-
-A purpose-built Ubuntu distro with only what agents need: git, curl, tmux, ripgrep, sshd. No GUI apps. PATH filtered to strip host tool leakage. Less overhead in WSL means more resources for your model — especially important when inference is running on the same machine.
+Your inference server (LM Studio, Ollama) lives on Windows. Your CLI agent lives in WSL. `lapel` resolves the real Windows host gateway IP from `/proc/net/route` and verifies connectivity from the *Linux side*, where it actually matters — classifying connection-refused vs. timeout vs. bind-address errors.
 
 ```bash
-lapel provision       # build the agent-optimized baseline
-lapel env status      # inspect runtime state
+lapel doctor                  # verify WSL, GPU/VRAM, and provider reachability
+lapel provider reachability   # probe Windows inference endpoint from inside WSL
 ```
 
-### 3. Agent sandboxing
+### 2. Lean WSL2 environment (`Ubuntu-Lean`)
 
-Filesystem scoping, network restrictions, process timeouts. Your agent gets read-write access to your projects, deny access to System32, and runs as a non-root user. You can see exactly what's enforced vs. just requested.
+A purpose-built minimal distro with only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`). No GUI apps (`guiApplications=false`), no background desktop bloat, and `PATH` filtered to strip `/mnt/c` host tool leakage. Every MB saved in WSL goes back to your model.
 
 ```bash
-lapel apply           # enforce the jail policy from your manifest
-lapel status          # check enforcement is active
+lapel provision               # build the agent-optimized Ubuntu-Lean baseline
+lapel env status              # inspect runtime state
 ```
 
-## The journey
+### 3. Agent sandboxing & honest reporting
+
+Filesystem scoping, process timeouts, and non-root execution (`agent` user). `lapel` distinguishes between controls that are actively **enforced**, **requested**, or **unsupported** on your system — never silently ignoring a rule or overclaiming security.
+
+```bash
+lapel apply                   # apply manifest baseline, workspace mount & jail policies
+lapel status                  # check live state and drift against baseline
+```
+
+### 4. Hardware-aware config sync & tuning profiles
+
+`lapel` detects your GPU VRAM and system RAM, recommends optimal model tiers, context windows, and batch sizes (backed by local heuristics and optional community tuning profiles), and configures your coding agents and VS Code plugins (**Pi, Claude Code, Kilo Code, Continue, Cline**) automatically.
+
+```bash
+lapel setup                   # one-command guided setup & hardware profile check
+lapel community insights      # view verified tuning profiles for your GPU tier (opt-in)
+```
+
+---
+
+## The user journey
 
 ```
 doctor → setup → run
-              ↘ troubleshoot
+              ↘ plan / apply / status (declarative manifest)
 ```
 
-1. **`doctor`** — Is WSL available? Is my provider reachable? What hardware do I have?
-2. **`setup`** — One command to provision the environment, import my workspace, and apply jail policies (coming soon)
-3. **`run`** — Launch my agent session with everything configured (coming soon)
+1. **`lapel doctor`** — Check WSL availability, GPU/VRAM specs, model tier recommendations, and provider reachability.
+2. **`lapel setup`** — One command to verify providers, provision `Ubuntu-Lean`, mount your workspace, and configure jail policies.
+3. **`lapel run`** — Launch your coding agent (`pi`, `claude-code`, `copilot`) inside the sandboxed WSL environment connected to your Windows inference provider.
 
-For power users who want more control: `init`, `plan`, `apply`, `status` give you declarative management with a YAML manifest and drift detection. But the default experience is guided, not config-first.
+For declarative environments and teams: `init`, `plan`, `apply`, and `status` manage your setup via a `lapel.yaml` manifest backed by SQLite drift detection (`.lapel/state.db`).
+
+---
 
 ## Quick start
 
 ```bash
-# 1. Check prerequisites
+# 1. Check WSL, GPU hardware, model recommendations, and provider reachability
 lapel doctor
 
-# 2. Provision a lean WSL environment
-lapel provision
+# 2. Run one-command guided setup for the current project
+lapel setup
 
-# 3. Verify your provider is reachable from inside WSL
+# 3. Verify your Windows inference provider is reachable from inside WSL
 lapel provider reachability
 
-# 4. Create a manifest and apply jail policies
-lapel init
-lapel apply
-
-# 5. Run your agent (when ready)
+# 4. Launch your coding agent inside the sandboxed environment
 lapel run
 ```
 
-## Supported providers
+---
 
-| Provider | How it's detected | Notes |
-|----------|------------------|-------|
-| **LM Studio** | `lms` CLI + system tray | Preferred; GUI + CLI (`lms server start/stop/status`) |
-| **Ollama** | API on `localhost:11434` | Lightweight; background service |
+## Supported providers & agents
 
-## Configuration
+| Category | Supported Targets | How `lapel` Integrates |
+|----------|-------------------|------------------------|
+| **Inference Providers** | **LM Studio**, **Ollama** | Detects installation & runtime status on Windows; lists loaded models; resolves WSL-to-Windows host gateway IP |
+| **CLI Coding Agents** | **Pi**, **Claude Code**, **GitHub Copilot CLI** | Auto-detects installed binaries in WSL; injects resolved provider endpoint, active model, and jail environment |
+| **VS Code Plugins** *(in progress)* | **Kilo Code**, **Continue**, **Cline** | Generates plugin config files from live provider models with VRAM-aware context windows |
 
-lapel uses a single `lapel.yaml` manifest in your project directory:
+---
+
+## Declarative configuration (`lapel.yaml`)
+
+For reproducible project setups, `lapel init` scaffolds a `lapel.yaml` manifest in your project directory:
 
 ```yaml
-schemaVersion: 1
+apiVersion: lapel.dev/v1
+name: my-project
 
-distro:
-  name: Ubuntu-Lean
+environment:
+  distribution: Ubuntu-Lean
   base: ubuntu
   version: "24.04"
-
-packages:
-  baseline: []   # use defaults (git, curl, tmux, ripgrep, sshd)
-  extras:
+  packages:
     - fd-find
     - tree
 
+provider:
+  name: local
+  type: lm-studio
+  baseURL: "http://127.0.0.1:1234"
+  connectionTimeout: 8s
+
+agent:
+  name: pi
+  provider: local
+
+workspace:
+  name: my-project
+  path: "."
+  importMode: bind   # "bind" for live bind mounts or "copy" for isolated rsync copies
+
 jail:
   name: developer
-  user: kurt
+  profile: developer
+  user: agent
   filesystem:
-    "C:\\Users\\Kurt\\Projects": read-write
+    "C:\\Users\\user\\Projects": read-write
     "C:\\Windows\\System32": deny
   network: unrestricted
   processes:
     privileged: false
     timeoutSeconds: 300
-
-workspace:
-  path: "."
-  importMode: copy   # or "bind" for bind mounts
 ```
 
-Override the baseline packages, add extras, scope filesystem access, restrict network. The manifest is an escape hatch — the guided setup handles the defaults well.
+---
+
+## Privacy & community features
+
+Community tuning insights (`lapel community`) are designed around **local-first privacy**:
+- Hardware detection and baseline model recommendations run **100% locally** during `lapel doctor` and `lapel setup`.
+- Sharing benchmark or configuration reports with the community backend is **opt-in** and controlled via environment flags (`LAPEL_COMMUNITY_ENABLED`).
+- You can point `lapel` at a self-hosted backend at any time via `LAPEL_COMMUNITY_ENDPOINT`.
+
+---
 
 ## Non-goals
 
-- Not a coding-agent harness (you bring your agent: Pi, Claude Code, Copilot)
-- Not an inference server (you bring yours: LM Studio, Ollama)
-- Not a Docker replacement or general container orchestrator
-- Not a hardened security boundary for hostile code
-- Not multi-user/tenant (yet)
+- **Not a coding-agent harness**: You bring your own agent (Pi, Claude Code, Kilo Code, Continue, Cline, Copilot).
+- **Not an inference engine**: You bring your own server (LM Studio, Ollama).
+- **Not a heavyweight container orchestrator**: Purpose-built specifically for local AI agent workflows on Windows + WSL2.
+- **Not a kernel security boundary for hostile malware**: Designed to prevent accidental agent blast radius (e.g., errant `rm -rf` or `/mnt/c` leakage), with transparent reporting of what is enforced.
+
+---
 
 ## Where to look next
 
-- **[`AGENTS.md`](AGENTS.md)** — build/test setup, package layout, technical decisions and gotchas for contributors
-- **[`docs/FEATURES.md`](docs/FEATURES.md)** — full feature plan with implementation status
-- **`lapel --help`** — all available commands
+- **[`AGENTS.md`](AGENTS.md)** — Build/test setup, package layout, and technical gotchas for contributors
+- **[`docs/FEATURES.md`](docs/FEATURES.md)** — Detailed breakdown of the four pillars, CLI commands, and architecture
+- **`lapel --help`** — All available CLI commands and flags

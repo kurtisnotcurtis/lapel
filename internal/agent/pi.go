@@ -2,43 +2,35 @@ package agent
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
+	"strings"
 )
 
 // PiAgent implements Agent for the pi coding harness.
-type PiAgent struct{}
+type PiAgent struct {
+	dist string
+}
 
-func NewPiAgent() *PiAgent { return &PiAgent{} }
+func NewPiAgent(distro ...string) *PiAgent {
+	d := "Ubuntu-Lean"
+	if len(distro) > 0 && distro[0] != "" {
+		d = distro[0]
+	}
+	return &PiAgent{dist: d}
+}
 
-func (a *PiAgent) Name() string { return "pi" }
+func (a *PiAgent) Name() string   { return "pi" }
+func (a *PiAgent) Binary() string { return "pi" }
 
 func (a *PiAgent) Detect(ctx context.Context) (bool, error) {
-	path, err := exec.LookPath("pi")
-	if err != nil {
-		return false, nil
-	}
-	_, err = exec.CommandContext(ctx, path, "--version").Output()
-	return err == nil, nil
+	return detectBinaryInWSL(ctx, a.dist, "pi")
 }
 
 func (a *PiAgent) Configure(env map[string]string, providerURL string, model string) {
-	env["OPENAI_API_BASE_URL"] = providerURL + "/v1"
+	base := strings.TrimRight(providerURL, "/")
+	if !strings.HasSuffix(base, "/v1") {
+		base += "/v1"
+	}
+	env["OPENAI_API_BASE_URL"] = base
 	env["OPENAI_MODEL_NAME"] = model
 	env["OPENAI_API_KEY"] = "not-needed-for-local"
-}
-
-func (a *PiAgent) Launch(ctx context.Context, providerURL string, model string, workingDir string, user string) error {
-	fmt.Printf("\nLaunching pi agent with %s at %s/v1\n", model, providerURL)
-
-	cmd := exec.CommandContext(ctx, "pi")
-	cmd.Dir = workingDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pi agent exited: %w", err)
-	}
-	return nil
 }

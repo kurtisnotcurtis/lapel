@@ -41,7 +41,7 @@ processors=4
 swap=1GB
 guiApplications=false
 networkingMode=mirrored`)
-	r := buildConfigReport("/mnt/c/Users/Kurt/.wslconfig", "ini", m)
+	r := buildConfigReport("/mnt/c/Users/user/.wslconfig", "ini", m)
 
 	if !r.Enforced(CtrlMemory) || !r.Enforced(CtrlProcessors) || !r.Enforced(CtrlSwap) {
 		t.Errorf("expected memory/processors/swap enforced, got %+v", r.Controls)
@@ -113,10 +113,10 @@ memory=4GB`)
 }
 
 func TestIniOrJSONFormat(t *testing.T) {
-	if got := iniOrJSONFormat("/mnt/c/Users/Kurt/.wslconfig"); got != "ini" {
+	if got := iniOrJSONFormat("/mnt/c/Users/user/.wslconfig"); got != "ini" {
 		t.Errorf("format = %q, want ini", got)
 	}
-	if got := iniOrJSONFormat("/mnt/c/Users/Kurt/.wslconfig.json"); got != "json" {
+	if got := iniOrJSONFormat("/mnt/c/Users/user/.wslconfig.json"); got != "json" {
 		t.Errorf("format = %q, want json", got)
 	}
 }

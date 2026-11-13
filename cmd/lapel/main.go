@@ -18,6 +18,13 @@ import (
 	"lapel/internal/reconcile"
 )
 
+// Build-time version metadata injected via -ldflags.
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 func main() {
 	if err := root().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -27,8 +34,9 @@ func main() {
 
 func root() *cobra.Command {
 	r := &cobra.Command{
-		Use:   "lapel",
-		Short: "Get local AI working in WSL — properly.",
+		Use:     "lapel",
+		Short:   "Get local AI working in WSL — properly.",
+		Version: fmt.Sprintf("%s (commit %s, built %s)", version, commit, date),
 	}
 	r.AddCommand(
 		setupCmd(),
@@ -38,12 +46,16 @@ func root() *cobra.Command {
 		sessionCmd(),
 		wslConfigCmd(),
 		provisionCmd(),
+		initCmd(),
 		applyCmd(),
+		jailControlsCmd(),
 		statusCmd(),
 		planCmd(),
 		checkLocalhostCmd(),
 		runCmd(),
-		healthCmd(),
+		pluginCmd(),
+		benchmarkCmd(),
+		communityCmd(),
 	)
 	return r
 }
@@ -309,8 +321,9 @@ func providerReachabilityCmd() *cobra.Command {
 func sessionCmd() *cobra.Command {
 	var idle = 30 * time.Second
 	cmd := &cobra.Command{
-		Use:   "session smoke",
-		Short: "Launch a session, then stop it and confirm no orphaned processes remain",
+		Use:    "session smoke",
+		Short:  "Launch a session, then stop it and confirm no orphaned processes remain",
+		Hidden: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			b := &wsl.DistBackend{}
@@ -390,9 +403,10 @@ func provisionCmd() *cobra.Command {
 // connectivity classifier so results are consistent across commands.
 func checkLocalhostCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "check-localhost PORT",
-		Short: "Probe localhost:<PORT> from inside WSL and classify reachability",
-		Args:  cobra.ExactArgs(1),
+		Use:    "check-localhost PORT",
+		Short:  "Probe localhost:<PORT> from inside WSL and classify reachability",
+		Hidden: true,
+		Args:   cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			port, err := strconv.Atoi(args[0])

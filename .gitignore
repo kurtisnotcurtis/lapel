@@ -1,9 +1,13 @@
 # Build output
 /bin/
 lapel.exe
+lapel
 
-# Draft/internal docs (not part of main narrative)
-docs/.drafts/
+# Project-local desired-state SQLite store
+.lapel/
+*.db
+*.db-shm
+*.db-wal
 
 # Test artifacts
 *.test

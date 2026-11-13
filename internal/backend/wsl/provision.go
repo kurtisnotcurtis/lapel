@@ -2,7 +2,7 @@
 // execution inside a running distro, resource-config inspection, and optional
 // minimal-distro provisioning. It is intentionally generic — it discovers the
 // host mount and .wslconfig at runtime rather than hard-coding any single
-// machine's layout (e.g. C:\Users\Kurt\.wslconfig).
+// machine's layout (e.g. C:\Users\user\.wslconfig).
 package wsl
 
 import (
@@ -108,8 +108,8 @@ func DefaultProvisionOptions(spec domain.Environment) ProvisionOptions {
 	// Prefer $USER (Unix), fall back to %USERNAME% (Windows) so the imported
 	// distro starts with a non-root default user on either side. Linux login
 	// names are case-sensitive and conventionally lowercase — normalise the
-	// Windows USERNAME value to lower-case so `useradd Kurt` does not leave us
-	// with a mismatched "Kurt" vs "kurt" later in the SSH step.
+	// Windows USERNAME value to lower-case so `useradd Alice` does not leave us
+	// with a mismatched "Alice" vs "alice" later in the SSH step.
 	user := os.Getenv("USER")
 	if user == "" {
 		user = os.Getenv("USERNAME")

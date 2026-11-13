@@ -24,10 +24,11 @@ type DesiredResource struct {
 // SetDesired persists the desired baseline for one managed resource so that
 // diff/status can detect drift against it later. kind is one of KindEnvironment,
 // KindProvider or KindWorkspace. specJSON must be canonical JSON of the declared
-// spec; desiredHash is its content hash. Existing identity columns (distribution,
-// base_url, path, ...) are preserved when the row already exists and blanked only
-// on first insert.
+// spec; desiredHash is its content hash.
 func (s *Store) SetDesired(kind, name, specJSON, desiredHash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	now := nowUTC()
 	switch kind {
 	case KindEnvironment:
@@ -62,6 +63,9 @@ ON CONFLICT(name) DO UPDATE SET
 // DesiredResources returns every persisted desired baseline ordered by kind then
 // name. Callers use this as the committed reference for drift detection.
 func (s *Store) DesiredResources() ([]*DesiredResource, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var out []*DesiredResource
 	for _, q := range []string{
 		`SELECT 'environment',name,spec_json,desired_hash,updated_at FROM environments ORDER BY name`,

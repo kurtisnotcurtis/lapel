@@ -19,7 +19,10 @@ const apiVersion = "lapel.dev/v1"
 
 // DefaultManifestName is the conventional manifest file name, searched for in
 // the current working directory (and ancestors when WalkUp is set).
-const DefaultManifestName = "Lapel.yaml"
+const DefaultManifestName = "lapel.yaml"
+
+// legacyManifestName is accepted as a fallback on case-sensitive filesystems.
+const legacyManifestName = "Lapel.yaml"
 
 // Manifest is the declarative description of a desired Lapel setup. It is
 // intentionally shallow and maps directly onto domain objects; it must not be
@@ -97,9 +100,11 @@ func DiscoverManifest(startDir string) (string, error) {
 		return "", err
 	}
 	for {
-		candidate := filepath.Join(dir, DefaultManifestName)
-		if fileExists(candidate) {
-			return candidate, nil
+		for _, name := range []string{DefaultManifestName, legacyManifestName} {
+			candidate := filepath.Join(dir, name)
+			if fileExists(candidate) {
+				return candidate, nil
+			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir { // reached filesystem root
@@ -185,8 +190,9 @@ func defaultProjectName(path string) string {
 	if strings.TrimSpace(path) == "" {
 		return "lapel-project"
 	}
-	base := filepath.Base(path)
-	if base == "" || base == "." || base == "/" {
+	dir := filepath.Dir(path)
+	base := strings.ToLower(filepath.Base(dir))
+	if base == "" || base == "." || base == "/" || base == `\` || !nameRe.MatchString(base) {
 		return "lapel-project"
 	}
 	return base

@@ -2,42 +2,34 @@ package agent
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"os/exec"
+	"strings"
 )
 
 // CopilotAgent implements Agent for GitHub Copilot CLI.
-type CopilotAgent struct{}
+type CopilotAgent struct {
+	dist string
+}
 
-func NewCopilotAgent() *CopilotAgent { return &CopilotAgent{} }
+func NewCopilotAgent(distro ...string) *CopilotAgent {
+	d := "Ubuntu-Lean"
+	if len(distro) > 0 && distro[0] != "" {
+		d = distro[0]
+	}
+	return &CopilotAgent{dist: d}
+}
 
-func (a *CopilotAgent) Name() string { return "copilot" }
+func (a *CopilotAgent) Name() string   { return "copilot" }
+func (a *CopilotAgent) Binary() string { return "github-copilot-cli" }
 
 func (a *CopilotAgent) Detect(ctx context.Context) (bool, error) {
-	path, err := exec.LookPath("copilot")
-	if err != nil {
-		return false, nil
-	}
-	_, err = exec.CommandContext(ctx, path, "--version").Output()
-	return err == nil, nil
+	return detectBinaryInWSL(ctx, a.dist, "github-copilot-cli", "copilot")
 }
 
 func (a *CopilotAgent) Configure(env map[string]string, providerURL string, model string) {
-	env["GITHUB_COPILOT_BASE_URL"] = providerURL + "/v1"
-	env["GITHUB_COPILOT_MODEL_NAME"] = model
-}
-
-func (a *CopilotAgent) Launch(ctx context.Context, providerURL string, model string, workingDir string, user string) error {
-	fmt.Printf("\nLaunching copilot with %s at %s/v1\n", model, providerURL)
-
-	cmd := exec.CommandContext(ctx, "copilot")
-	cmd.Dir = workingDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("copilot exited: %w", err)
+	base := strings.TrimRight(providerURL, "/")
+	if !strings.HasSuffix(base, "/v1") {
+		base += "/v1"
 	}
-	return nil
+	env["GITHUB_COPILOT_BASE_URL"] = base
+	env["GITHUB_COPILOT_MODEL_NAME"] = model
 }

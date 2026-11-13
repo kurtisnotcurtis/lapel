@@ -10,7 +10,7 @@ import (
 // the import mode that determines how they're connected.
 type Workspace struct {
 	Name       string    `json:"name"`
-	HostPath   string    `json:"hostPath"`   // Windows host path (e.g., C:\Users\kurt\projects)
+	HostPath   string    `json:"hostPath"`   // Windows host path (e.g., C:\Users\user\projects)
 	GuestPath  string    `json:"guestPath"`  // WSL2 guest path (e.g., /home/agent/workspace/project)
 	Mode       ImportMode `json:"mode"`      // "copy" or "bind"
 	Imported   bool      `json:"imported"`   // whether the workspace has been imported

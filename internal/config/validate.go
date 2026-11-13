@@ -56,13 +56,6 @@ func (m *Manifest) ValidateWith(v Validator) error {
 		}
 	}
 
-	// Semantic: jail.user must exist in distro (if specified).
-	if v.CheckUserExists != nil && strings.TrimSpace(m.Jail.User) != "" {
-		if !v.CheckUserExists(m.Jail.User) {
-			problems = append(problems, fmt.Sprintf("jail.user %q does not exist", m.Jail.User))
-		}
-	}
-
 	if len(problems) == 0 {
 		return nil
 	}
@@ -106,9 +99,9 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 
 	// Provider.
 	switch strings.ToLower(strings.TrimSpace(m.Provider.Type)) {
-	case "", "openai-compatible":
+	case "", "openai-compatible", "lm-studio", "ollama":
 	default:
-		problems = append(problems, fmt.Sprintf("provider.type must be openai-compatible (got %q)", m.Provider.Type))
+		problems = append(problems, fmt.Sprintf("provider.type must be openai-compatible|lm-studio|ollama (got %q)", m.Provider.Type))
 	}
 	if strings.TrimSpace(m.Provider.BaseURL) != "" {
 		u, err := url.Parse(m.Provider.BaseURL)
@@ -136,9 +129,9 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 
 	// Jail.
 	switch strings.ToLower(strings.TrimSpace(m.Jail.Network)) {
-	case "", "unrestricted", "restricted":
+	case "", "unrestricted", "restricted", "outbound-only", "none":
 	default:
-		problems = append(problems, fmt.Sprintf("jail.network must be unrestricted|restricted (got %q)", m.Jail.Network))
+		problems = append(problems, fmt.Sprintf("jail.network must be unrestricted|outbound-only|none|restricted (got %q)", m.Jail.Network))
 	}
 	if m.Jail.Processes.TimeoutSeconds < 0 {
 		problems = append(problems, "jail.processes.timeoutSeconds must not be negative")
