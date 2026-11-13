@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Lapel Refined - Notched Collar (Light Foreground for Dark Backgrounds) -->
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:svg="http://www.w3.org/2000/svg"
+     version="1.1"
+     width="500" height="500"
+     viewBox="0 25 100 100">
+  
+  <g fill="none" stroke="#E6EDF3" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Outer lapel silhouette: top arch, left & right notches, extending cleanly to bottom tips -->
+    <path d="M 46.5,116
+             C 34,102 21,84 9,65
+             L 21,60
+             L 9,55
+             L 14,39.5
+             C 30,31.5 70,32 86,40.5
+             L 91,56.5
+             L 79,61.5
+             L 91,66.5
+             C 79,85 65.5,102.5 52.5,116.8" />
+
+    <!-- Left inner lapel & curved collar fold -->
+    <path d="M 46.5,116
+             C 41.5,95 39,79 37.2,65
+             C 36.2,57.2 37.5,50.5 42.5,47.5
+             C 38.8,47 35,46.2 31.5,45.2" />
+
+    <!-- Right inner lapel & curved collar fold (slightly offset) -->
+    <path d="M 52.5,116.8
+             C 57.5,95.5 60.5,80 62.3,66
+             C 63.3,58.2 61.8,51.5 56.8,48.5
+             C 60.5,48 64.3,47.2 67.8,46.2" />
+  </g>
+</svg>

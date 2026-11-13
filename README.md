@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/lapel-logo.svg" alt="lapel logo" width="128" height="128" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/lapel-logo-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="assets/lapel-logo.svg" />
+    <img src="assets/lapel-logo.svg" alt="lapel logo" width="128" height="128" />
+  </picture>
 </p>
 
 <h1 align="center">lapel</h1>
