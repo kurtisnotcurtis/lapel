@@ -1,8 +1,13 @@
-# lapel
+<p align="center">
+  <img src="assets/lapel-logo.svg" alt="lapel logo" width="128" height="128" />
+</p>
 
-**Local Agent Protocol Enhancement Layer**
+<h1 align="center">lapel</h1>
 
-Bridge your Windows GPU (LM Studio / Ollama) to your coding agents in WSL2 and VS Code — lean, sandboxed, and hardware-tuned.
+<p align="center">
+  <strong>Local Agent Protocol Enhancement Layer</strong><br />
+  Bridge your Windows GPU (LM Studio / Ollama) to your coding agents in WSL2 and VS Code — lean, sandboxed, and hardware-tuned.
+</p>
 
 `lapel` gives you a purpose-built minimal Linux environment optimized for coding agents, guarantees your Windows inference server is reachable from inside WSL, syncs VRAM-tuned model configs to your CLI agents and IDE extensions, and scopes filesystem access so an autonomous agent doesn't eat your Windows files.
 
