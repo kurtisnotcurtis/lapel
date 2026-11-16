@@ -10,29 +10,29 @@
 
 <p align="center">
   <strong>Local Agent Protocol Enhancement Layer</strong><br />
-  Bridge your Windows GPU (LM Studio / Ollama) to your coding agents in WSL2 and VS Code — lean, sandboxed, and hardware-tuned.
+  Pin your Windows host (LM Studio / Ollama) to a purpose-built, sandboxed WSL container for your coding agents — lean and hardware-tuned.
 </p>
 
 `lapel` gives you a purpose-built minimal Linux environment optimized for coding agents, guarantees your Windows inference server is reachable from inside WSL, syncs VRAM-tuned model configs to your CLI agents and IDE extensions, and scopes filesystem access so an autonomous agent doesn't eat your Windows files.
 
-No bloat. No guesswork. Just working local AI.
+No bloat. No guesswork. Local working inference.
 
 ---
 
 ## The problem
 
-Running a coding agent with a local model on Windows means bridging four gaps that break out of the box:
+Running coding agents against local models on Windows often introduces subtle friction between your host, your WSL environment, and your tools:
 
-1. **The Network Boundary breaks**: LM Studio and Ollama run on Windows, while CLI agents run in WSL2. The NAT gateway IP changes across reboots, `resolv.conf` lies, and mirrored networking breaks local port bindings in WSL 3.x.
-2. **The Resource Budget clashes**: Stock Ubuntu from the Microsoft Store is a general-purpose desktop OS living inside Windows — systemd services, background daemons, `/mnt/c` `PATH` leakage, and GUI apps eating 1–3 GB of RAM that your inference server needs for KV cache.
-3. **The Config Matrix is manual & fragile**: Every time you load a new model, you have to manually rewrite JSON endpoints and guess context windows across **Pi, Claude Code, Kilo Code, Continue, or Cline** — hoping your batch size and context cap won't OOM your GPU.
-4. **The Blast Radius is unscoped**: Coding agents execute shell commands autonomously. Giving an experimental local model unscoped access to `/mnt/c` is an accident waiting to happen.
+- **Cross-boundary networking can be brittle**: Inference servers like LM Studio and Ollama typically run on Windows, while CLI agents live in WSL2. Shifting NAT gateway IPs, `resolv.conf` quirks, or mirrored networking differences can break local endpoint reachability when you least expect it.
+- **General-purpose distros add unnecessary overhead**: Stock WSL distributions bring background services, GUI support, and `/mnt/c` `PATH` leakage—consuming memory and cluttering the environment when you'd rather keep resources available for inference.
+- **Agent and model configs drift easily**: Switching models or trying new tools across **Pi, Claude Code, Kilo Code, Continue, or Cline** often means manually updating endpoints, context windows, and batch settings by trial and error.
+- **Autonomous agents need clear boundaries**: Coding agents execute shell commands on your behalf. Leaving `/mnt/c` wide open to an experimental local model creates a larger blast radius than most workflows need.
 
-`lapel` solves all four in one control plane.
+`lapel` smooths out these edges in one control plane.
 
 ---
 
-## Four pillars
+## Four layers
 
 ### 1. Cross-boundary provider reachability
 

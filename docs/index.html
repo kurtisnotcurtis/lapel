@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>lapel — Local Agent Protocol Enhancement Layer</title>
-  <meta name="description" content="Bridge your Windows GPU (LM Studio / Ollama) to your coding agents in WSL2 and VS Code — lean, sandboxed, and hardware-tuned." />
+  <meta name="description" content="Pin your Windows host (LM Studio / Ollama) to a purpose-built, sandboxed WSL container for your coding agents — lean and hardware-tuned." />
   <link rel="icon" type="image/svg+xml" href="assets/lapel-logo.svg" />
   <style>
     :root {
@@ -376,7 +376,7 @@
         <span>lapel</span>
       </a>
       <nav class="nav-links">
-        <a href="#pillars" class="hide-sm">Pillars</a>
+        <a href="#layers" class="hide-sm">Layers</a>
         <a href="#quickstart">Quick Start</a>
         <a href="#integrations" class="hide-sm">Integrations</a>
         <a href="#manifest" class="hide-sm">Manifest</a>
@@ -396,7 +396,7 @@
         <span class="badge">Open Source &middot; Apache 2.0 &middot; Windows + WSL2</span>
         <h1>Local Agent Protocol Enhancement Layer</h1>
         <p class="lead">
-          Bridge your Windows GPU (LM Studio / Ollama) to your coding agents in WSL2 and VS Code &mdash; lean, sandboxed, and hardware-tuned. No bloat. No guesswork. Just working local AI.
+          Pin your Windows host (LM Studio / Ollama) to a purpose-built, sandboxed WSL container for your coding agents &mdash; lean and hardware-tuned. No bloat. No guesswork. Local working inference.
         </p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#quickstart">Get Started</a>
@@ -417,11 +417,11 @@
       </div>
     </section>
 
-    <section id="pillars">
+    <section id="layers">
       <div class="container">
-        <h2>Four pillars</h2>
+        <h2>Four layers</h2>
         <p class="section-sub">
-          Running local coding agents on Windows means bridging four gaps that break out of the box. <code>lapel</code> solves all four in one control plane.
+          Running coding agents against local models on Windows often introduces friction between your host, your WSL environment, and your tools. <code>lapel</code> smooths out those edges across four layers in one control plane.
         </p>
         <div class="grid-4">
           <div class="card">
