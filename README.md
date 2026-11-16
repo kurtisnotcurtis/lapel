@@ -19,13 +19,13 @@ No bloat. No guesswork. Local working inference.
 
 ---
 
-## The problem
+## Why local inference on WSL gets weaselly
 
 Running coding agents against local models on Windows often introduces subtle friction between your host, your WSL environment, and your tools:
 
-- **Cross-boundary networking can be brittle**: Inference servers like LM Studio and Ollama typically run on Windows, while CLI agents live in WSL2. Shifting NAT gateway IPs, `resolv.conf` quirks, or mirrored networking differences can break local endpoint reachability when you least expect it.
-- **General-purpose distros add unnecessary overhead**: Stock WSL distributions bring background services, GUI support, and `/mnt/c` `PATH` leakage—consuming memory and cluttering the environment when you'd rather keep resources available for inference.
-- **Agent and model configs drift easily**: Switching models or trying new tools across **Pi, Claude Code, Kilo Code, Continue, or Cline** often means manually updating endpoints, context windows, and batch settings by trial and error.
+- **Cross-boundary networking can be brittle**: Inference servers like LM Studio and Ollama typically run on Windows, while CLI agents live in WSL2. Shifting NAT gateway IPs, `resolv.conf` quirks, firewall rules, or mirrored networking differences can quietly break local endpoint reachability across reboots or config changes.
+- **Default WSL configs and general-purpose distros add unnecessary overhead**: Out of the box, WSL's default configuration (unbounded VM memory allocation, GUI app support, Windows `PATH` interop) paired with stock distributions full of background services consumes RAM and clutters the shell—resources you'd rather leave free for your inference server's model weights and KV cache.
+- **Agent and model configs drift easily**: Switching models or trying new tools across **Pi, Claude Code, Kilo Code, Continue, or Cline** often means manually updating endpoints, context windows, and batch settings by trial and error instead of deriving them from your hardware.
 - **Autonomous agents need clear boundaries**: Coding agents execute shell commands on your behalf. Leaving `/mnt/c` wide open to an experimental local model creates a larger blast radius than most workflows need.
 
 `lapel` smooths out these edges in one control plane.
