@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<!-- Lapel Refined - Notched Collar (Single Color, Subtle Offset, Clean Collar Curves) -->
+<!-- Lapel Refined - Notched Collar (White Favicon) -->
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:svg="http://www.w3.org/2000/svg"
      version="1.1"
      width="500" height="500"
      viewBox="0 25 100 100">
   
-  <g fill="none" stroke="#3A3A3A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
     <!-- Outer lapel silhouette: top arch, left & right notches, extending cleanly to bottom tips -->
     <path d="M 46.5,116
              C 34,102 21,84 9,65
