@@ -118,11 +118,23 @@ func DefaultProvisionOptions(spec domain.Environment) ProvisionOptions {
 		user = os.Getenv("USERNAME")
 	}
 	user = strings.ToLower(user)
+	pkgs := append([]string{}, AgentToolkitPackages...)
+	seen := make(map[string]bool, len(pkgs))
+	for _, p := range pkgs {
+		seen[p] = true
+	}
+	for _, p := range spec.Packages {
+		p = strings.TrimSpace(p)
+		if p != "" && !seen[p] {
+			pkgs = append(pkgs, p)
+			seen[p] = true
+		}
+	}
 	return ProvisionOptions{
 		Name:             name,
 		Base:             base,
 		Version:          "",
-		Packages:         AgentToolkitPackages,
+		Packages:         pkgs,
 		EnsurePackages:   true,
 		DefaultUser:      user,
 		SSHPublicKeyPath: keyPath,
@@ -404,6 +416,10 @@ func setupFreshDistro(ctx context.Context, distro, user string) error {
 if ! id -u %s >/dev/null 2>&1; then
   getent group sudo >/dev/null || groupadd sudo
   useradd -m -s /bin/bash -G sudo %s
+fi
+# Ensure the dedicated non-root 'agent' user also exists for jailed sessions
+if ! id -u agent >/dev/null 2>&1; then
+  useradd -m -s /bin/bash agent
 fi
 # Passwordless sudo for common provisioning commands (more restrictive than ALL)
 echo %s " ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/systemctl, /usr/sbin/useradd, /usr/sbin/usermod, /bin/chmod, /bin/chown, /bin/mkdir, /usr/bin/tee, /bin/bash" > /etc/sudoers.d/90-lapel-%s

@@ -76,7 +76,9 @@ func doctorCmd() *cobra.Command {
 			if status.Version != "" {
 				fmt.Printf("  wsl version: %s\n", status.Version)
 			}
-
+			if status.Note != "" {
+				fmt.Printf("  note: %s\n", status.Note)
+			}
 
 			// Check kernel updates if WSL is available.
 			if status.Available {
@@ -97,21 +99,23 @@ func doctorCmd() *cobra.Command {
 					}
 				}
 
-				// Check GPU/CUDA status for ML inference support.
-				gStatus, err := wsl.CheckGPUStatus(ctx)
-				if err != nil {
-					fmt.Printf("  gpu: error (%s)\n", err)
-				} else {
-					fmt.Printf("  gpu: %s\n", gStatus.Message)
-					if gStatus.CUDAVersion != "unknown" && gStatus.CUDAVersion != "" {
-						fmt.Printf("    cuda: %s\n", gStatus.CUDAVersion)
-					}
-					if gStatus.DriverVersion != "unknown" && gStatus.DriverVersion != "" {
-						fmt.Printf("    driver: %s\n", gStatus.DriverVersion)
-					}
-					if len(gStatus.GPUs) > 0 {
-						for i, gpu := range gStatus.GPUs {
-							fmt.Printf("    gpu %d: %s\n", i+1, gpu)
+				// Check GPU/CUDA status inside WSL when the distro is provisioned.
+				if status.Note == "" {
+					gStatus, err := wsl.CheckGPUStatus(ctx)
+					if err != nil {
+						fmt.Printf("  gpu: error (%s)\n", err)
+					} else {
+						fmt.Printf("  gpu: %s\n", gStatus.Message)
+						if gStatus.CUDAVersion != "unknown" && gStatus.CUDAVersion != "" {
+							fmt.Printf("    cuda: %s\n", gStatus.CUDAVersion)
+						}
+						if gStatus.DriverVersion != "unknown" && gStatus.DriverVersion != "" {
+							fmt.Printf("    driver: %s\n", gStatus.DriverVersion)
+						}
+						if len(gStatus.GPUs) > 0 {
+							for i, gpu := range gStatus.GPUs {
+								fmt.Printf("    gpu %d: %s\n", i+1, gpu)
+							}
 						}
 					}
 				}

@@ -73,11 +73,14 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			}
 
 			fmt.Printf("  ✓ WSL available (%s %s)\n", status.Name, status.Version)
-
-			// Check GPU if available (informational)
-			gStatus, err := wsl.CheckGPUStatus(ctx)
-			if err == nil && len(gStatus.GPUs) > 0 {
-				fmt.Printf("  ✓ GPU detected: %s\n", gStatus.GPUs[0])
+			if status.Note != "" {
+				fmt.Printf("  ℹ %s\n", status.Note)
+			} else {
+				// Check GPU inside WSL if the distro is already present (informational)
+				gStatus, err := wsl.CheckGPUStatus(ctx)
+				if err == nil && len(gStatus.GPUs) > 0 {
+					fmt.Printf("  ✓ GPU detected: %s\n", gStatus.GPUs[0])
+				}
 			}
 
 			// Detect hardware for community profile (if enabled)

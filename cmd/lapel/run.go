@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +13,7 @@ import (
 	"lapel/internal/domain"
 	"lapel/internal/jail"
 	"lapel/internal/provider"
+	"lapel/internal/workspace"
 )
 
 // runCmd launches an agent session with jail policies applied. This is the
@@ -62,8 +64,12 @@ If no --agent is specified, lapel will detect which agents are available and use
 				return fmt.Errorf("detection failed: %w", err)
 			}
 			if !status.Available {
-				fmt.Println("✗ WSL not available. Run `lapel setup` first.")
-				return fmt.Errorf("wsL not available")
+				fmt.Println("✗ WSL not available. Install WSL2 via `wsl.exe --install` first.")
+				return fmt.Errorf("WSL not available")
+			}
+			if status.Note != "" {
+				fmt.Printf("✗ WSL distro %q is not provisioned yet. Run `lapel setup` first.\n", wsl.Dist)
+				return fmt.Errorf("distro %q not provisioned", wsl.Dist)
 			}
 
 			// Step 1: Detect available agents
@@ -84,24 +90,36 @@ If no --agent is specified, lapel will detect which agents are available and use
 
 			// Determine which agent to use
 			var selectedAgent agent.Agent
-			if agentName != "" {
+			if cmd.Flags().Changed("agent") && agentName != "" {
 				selectedAgent = mgr.FindByName(agentName)
 				if selectedAgent == nil {
 					return fmt.Errorf("agent %q not found. Available: %v", agentName, mgr.List())
 				}
 			} else {
-				// Auto-detect first available
-				for _, s := range agentStatuses {
-					if s.Installed {
-						selectedAgent = mgr.FindByName(s.Name)
-						break
+				// Auto-detect first available (prefer manifest agent if installed)
+				if agentName != "" {
+					for _, s := range agentStatuses {
+						if s.Installed && s.Name == agentName {
+							selectedAgent = mgr.FindByName(s.Name)
+							break
+						}
 					}
 				}
 				if selectedAgent == nil {
-					return fmt.Errorf("no agents found. Install pi, claude-code, or copilot first.")
+					for _, s := range agentStatuses {
+						if s.Installed {
+							selectedAgent = mgr.FindByName(s.Name)
+							break
+						}
+					}
 				}
 			}
-			fmt.Printf("\n  Using agent: %s\n", selectedAgent.Name())
+			if selectedAgent != nil {
+				fmt.Printf("\n  Using agent: %s\n", selectedAgent.Name())
+			} else {
+				fmt.Println("\n  ℹ No coding agent CLI installed yet in WSL — launching interactive jailed shell.")
+				fmt.Println("    (Tip: install an agent inside the shell via `npm i -g @anthropic-ai/claude-code` or `npm i -g @githubnext/github-copilot-cli`)")
+			}
 
 			// Step 2: Get provider info
 			fmt.Println("\nStep 2/4: Checking inference providers...")
@@ -162,7 +180,13 @@ If no --agent is specified, lapel will detect which agents are available and use
 			// Step 3: Configure agent environment
 			fmt.Println("\nStep 3/4: Configuring agent environment...")
 			env := make(map[string]string)
-			selectedAgent.Configure(env, providerURL, model)
+			if selectedAgent != nil {
+				selectedAgent.Configure(env, providerURL, model)
+			} else {
+				// Populate standard OpenAI/Anthropic/Ollama env vars for the jailed shell
+				mgr.FindByName("pi").Configure(env, providerURL, model)
+				mgr.FindByName("claude-code").Configure(env, providerURL, model)
+			}
 
 			for k, v := range env {
 				fmt.Printf("  %s=%s\n", k, v)
@@ -204,16 +228,33 @@ If no --agent is specified, lapel will detect which agents are available and use
 			// Step 4: Launch agent
 			fmt.Println("\nStep 4/4: Launching agent...")
 
-			cmdStr := selectedAgent.Binary()
-			if cmdStr == "" {
-				cmdStr = "bash"
+			cmdStr := "bash -l"
+			if selectedAgent != nil && selectedAgent.Binary() != "" {
+				cmdStr = selectedAgent.Binary()
+			}
+
+			workDir := windowsPathToLinux(wsPath)
+			wsName := filepath.Base(wsPath)
+			if manifestErr == nil && m != nil && m.Workspace.Name != "" {
+				wsName = m.Workspace.Name
+			}
+			if wsName == "" || wsName == "." {
+				wsName = "project"
+			}
+			wsMgr := workspace.NewManager(user)
+			importMode := workspace.ModeBind
+			if manifestErr == nil && m != nil && m.Workspace.ImportMode != "" {
+				importMode = workspace.ImportMode(m.Workspace.ImportMode)
+			}
+			if wsMgr.Exists(wsName, importMode) {
+				workDir = wsMgr.Path(wsName, importMode)
 			}
 
 			req := domain.ExecRequest{
 				Dist:       wsl.Dist,
 				User:       user,
-				WorkingDir: "/home/" + user,
-				Cmd:        enforcer.WrapCommand([]string{"bash", "-c", cmdStr}),
+				WorkingDir: workDir,
+				Cmd:        enforcer.WrapCommand([]string{"bash", "-lc", cmdStr}),
 				Env:        jailEnv,
 				Stdin:      true,
 			}

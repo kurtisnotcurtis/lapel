@@ -93,7 +93,7 @@ func buildLaunchScript(pgFile, workdir string, env map[string]string, cmd []stri
 		fmt.Fprintf(&b, "export %s=%s\n", shellQuote(k), shellQuote(v))
 	}
 	if workdir != "" {
-		fmt.Fprintf(&b, "cd %s || exit 1\n", shellQuote(workdir))
+		fmt.Fprintf(&b, "cd %s 2>/dev/null || cd \"$HOME\" 2>/dev/null || true\n", shellQuote(workdir))
 	}
 	if len(cmd) > 0 {
 		b.WriteString("exec")

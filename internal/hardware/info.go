@@ -19,10 +19,11 @@ func (i *Info) IsLinux() bool {
 
 // GPUInfo contains graphics processing unit details.
 type GPUInfo struct {
-	Name      string  `json:"name"`
-	VRAMGB    float64 `json:"vramGb"`
-	Compute   string  `json:"compute,omitempty"` // CUDA compute capability or ROCm version
-	Available bool    `json:"available"`
+	Name       string  `json:"name"`
+	VRAMGB     float64 `json:"vramGb"`
+	VRAMUsedGB float64 `json:"vramUsedGb,omitempty"`
+	Compute    string  `json:"compute,omitempty"` // CUDA compute capability or ROCm version
+	Available  bool    `json:"available"`
 }
 
 // RAMInfo contains memory details.

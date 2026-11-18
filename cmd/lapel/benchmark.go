@@ -99,6 +99,15 @@ the verified report when --share is passed (requires LAPEL_COMMUNITY_ENABLED=tru
 				return fmt.Errorf("benchmark probe failed against %s: %w (ensure LM Studio or Ollama is running with a loaded model)", baseURL, err)
 			}
 
+			// Re-sample active GPU VRAM usage while the model is resident in memory.
+			if _, postHW, postErr := buildHardwareProfile(ctx); postErr == nil && postHW != nil && postHW.GPU.VRAMUsedGB > 0 {
+				res.VRAMGB = postHW.GPU.VRAMUsedGB
+				gpuLabel = fmt.Sprintf("%s (%.1f / %.1f GB VRAM)", postHW.GPU.Name, postHW.GPU.VRAMUsedGB, postHW.GPU.VRAMGB)
+			} else if hwInfo != nil && hwInfo.GPU.VRAMUsedGB > 0 {
+				res.VRAMGB = hwInfo.GPU.VRAMUsedGB
+				gpuLabel = fmt.Sprintf("%s (%.1f / %.1f GB VRAM)", hwInfo.GPU.Name, hwInfo.GPU.VRAMUsedGB, hwInfo.GPU.VRAMGB)
+			}
+
 			fmt.Println("\n┌──────────────────────────────────────────────────────────────┐")
 			fmt.Printf("│ ⚡ LAPEL RIG BENCHMARK CARD                                  │\n")
 			fmt.Println("├──────────────────────────────────────────────────────────────┤")

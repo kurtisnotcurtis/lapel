@@ -124,24 +124,33 @@ func OSRelease(ctx context.Context) (map[string]string, error) {
 }
 
 // Detect reports whether WSL2 and the target distro are available.
+// Available is true whenever wsl.exe is installed and operational on the host;
+// if the target distro (Dist) has not been imported yet, Note explains that
+// provisioning is required so `lapel setup` and `lapel apply` can proceed to
+// create it on first run.
 func (d *DistBackend) Detect(ctx context.Context) (domain.BackendStatus, error) {
 	if _, err := exec.LookPath("wsl.exe"); err != nil {
 		return domain.BackendStatus{Available: false}, fmt.Errorf("wsl.exe not found on PATH: %w", err)
 	}
+	version := detectWSLVersion(ctx)
 	names, err := ListDistros(ctx)
-	if err != nil {
+	if err != nil && version == "" {
 		return domain.BackendStatus{}, fmt.Errorf("listing distros: %w", err)
 	}
-	status := domain.BackendStatus{Name: "wsl"}
+	status := domain.BackendStatus{
+		Name:      "wsl",
+		Available: true,
+		Version:   version,
+	}
+	distroFound := false
 	for _, n := range names {
 		if strings.EqualFold(n, Dist) {
-			status.Available = true
+			distroFound = true
 			break
 		}
 	}
-	// Populate WSL version if available.
-	if status.Available {
-		status.Version = detectWSLVersion(ctx)
+	if !distroFound {
+		status.Note = fmt.Sprintf("distro %q not yet provisioned (run 'lapel setup' or 'lapel provision')", Dist)
 	}
 	return status, nil
 }

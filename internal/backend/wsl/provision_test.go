@@ -2,8 +2,9 @@ package wsl
 
 import (
 	"strings"
-
 	"testing"
+
+	"lapel/internal/domain"
 )
 
 func TestRootfsURLUbuntu(t *testing.T) {
@@ -107,5 +108,29 @@ func TestDistroStorageDirUsesLocalAppData(t *testing.T) {
 	}
 	if !strings.HasPrefix(dir, tmp) || !strings.HasSuffix(dir, "lapel") {
 		t.Errorf("unexpected storage dir %q (want under %q ending in lapel)", dir, tmp)
+	}
+}
+
+func TestDefaultProvisionOptionsMergesExtraPackages(t *testing.T) {
+	opts := DefaultProvisionOptions(domain.Environment{
+		Name:     "lapel",
+		Packages: []string{"htop", "git", "sqlite3"}, // "git" is already in AgentToolkitPackages
+	})
+	foundHtop, foundSqlite, gitCount := false, false, 0
+	for _, p := range opts.Packages {
+		switch p {
+		case "htop":
+			foundHtop = true
+		case "sqlite3":
+			foundSqlite = true
+		case "git":
+			gitCount++
+		}
+	}
+	if !foundHtop || !foundSqlite {
+		t.Errorf("expected extra packages htop and sqlite3 in %v", opts.Packages)
+	}
+	if gitCount != 1 {
+		t.Errorf("expected git to appear once (deduplicated), got %d", gitCount)
 	}
 }

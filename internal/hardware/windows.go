@@ -44,23 +44,27 @@ func (d *WindowsDetector) Detect(ctx context.Context) (*Info, error) {
 func (d *WindowsDetector) detectGPU(ctx context.Context) (GPUInfo, error) {
 	// 1. Prefer nvidia-smi first: Win32_VideoController.AdapterRAM is a 32-bit
 	// uint32 that wraps/caps at 4 GB on GPUs with >4 GB VRAM (RTX 4070/4080/4090).
-	nvCmd := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name,memory.total,compute_cap", "--format=csv,noheader,nounits")
+	nvCmd := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name,memory.total,memory.used,compute_cap", "--format=csv,noheader,nounits")
 	if out, err := nvCmd.Output(); err == nil {
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) > 0 && strings.TrimSpace(lines[0]) != "" {
 			fields := strings.Split(lines[0], ",")
 			if len(fields) >= 2 {
-				var vramMB float64
+				var vramMB, usedMB float64
 				fmt.Sscanf(strings.TrimSpace(fields[1]), "%f", &vramMB)
-				compute := ""
 				if len(fields) >= 3 {
-					compute = strings.TrimSpace(fields[2])
+					fmt.Sscanf(strings.TrimSpace(fields[2]), "%f", &usedMB)
+				}
+				compute := ""
+				if len(fields) >= 4 {
+					compute = strings.TrimSpace(fields[3])
 				}
 				return GPUInfo{
-					Name:      strings.TrimSpace(fields[0]),
-					VRAMGB:    vramMB / 1024.0,
-					Compute:   compute,
-					Available: true,
+					Name:       strings.TrimSpace(fields[0]),
+					VRAMGB:     vramMB / 1024.0,
+					VRAMUsedGB: usedMB / 1024.0,
+					Compute:    compute,
+					Available:  true,
 				}, nil
 			}
 		}

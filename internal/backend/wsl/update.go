@@ -3,7 +3,6 @@ package wsl
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -65,24 +64,20 @@ func CheckKernelUpdates(ctx context.Context) (KernelUpdateStatus, error) {
 // CheckGPUStatus detects NVIDIA GPU and CUDA runtime availability in WSL2.
 // Returns the GPU status and any error encountered during detection.
 func CheckGPUStatus(ctx context.Context) (GPUStatus, error) {
-	fmt.Fprintf(os.Stderr, "[DEBUG] CheckGPUStatus called\n")
 	status := GPUStatus{
 		CUDAVersion:   "unknown",
 		DriverVersion: "unknown",
 		Message:       "checking...",
 	}
-	fmt.Fprintf(os.Stderr, "[DEBUG] status initialized, calling runWslWith\n")
 
 	// Try to detect NVIDIA GPU via nvidia-smi (via stdin with full path)
 	out, err := runWslWithInput(ctx, []string{"-d", Dist, "bash"}, `/usr/lib/wsl/lib/nvidia-smi --query-gpu=name,driver_version --format=csv,noheader`)
-	fmt.Printf("[DEBUG] query-gpu: out=%q err=%v\n", out, err)
 	if err != nil {
 		status.Message = fmt.Sprintf("NVIDIA GPU not detected: %v", err)
 		return status, nil
 	}
 
 	out = strings.TrimSpace(out)
-	fmt.Printf("[DEBUG] trimmed out=%q\n", out)
 	if out == "" || strings.Contains(strings.ToLower(out), "error") {
 		status.Message = "No NVIDIA GPUs detected"
 		return status, nil

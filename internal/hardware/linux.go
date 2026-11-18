@@ -45,22 +45,28 @@ func (d *LinuxDetector) Detect(ctx context.Context) (*Info, error) {
 
 func (d *LinuxDetector) detectGPU(ctx context.Context) (GPUInfo, error) {
 	// Try nvidia-smi first for NVIDIA GPUs
-	cmd := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name,memory.total,compute_cap", "--format=csv,noheader")
+	cmd := exec.CommandContext(ctx, "nvidia-smi", "--query-gpu=name,memory.total,memory.used,compute_cap", "--format=csv,noheader,nounits")
 	out, err := cmd.Output()
 	if err == nil {
 		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 		if len(lines) > 0 {
 			fields := strings.Split(lines[0], ",")
-			if len(fields) >= 3 {
-				var vramMB float64
+			if len(fields) >= 2 {
+				var vramMB, usedMB float64
 				fmt.Sscanf(strings.TrimSpace(fields[1]), "%f", &vramMB)
-				vramGB := vramMB / 1024
-
+				if len(fields) >= 3 {
+					fmt.Sscanf(strings.TrimSpace(fields[2]), "%f", &usedMB)
+				}
+				compute := ""
+				if len(fields) >= 4 {
+					compute = strings.TrimSpace(fields[3])
+				}
 				return GPUInfo{
-					Name:      strings.TrimSpace(fields[0]),
-					VRAMGB:    vramGB,
-					Compute:   strings.TrimSpace(fields[2]),
-					Available: true,
+					Name:       strings.TrimSpace(fields[0]),
+					VRAMGB:     vramMB / 1024.0,
+					VRAMUsedGB: usedMB / 1024.0,
+					Compute:    compute,
+					Available:  true,
 				}, nil
 			}
 		}
