@@ -37,6 +37,17 @@ type Manifest struct {
 	Jail        Jail          `yaml:"jail"`
 }
 
+// EnvironmentStyle configures the visual shell prompt, welcome banner, and
+// Windows Terminal fragment for the managed WSL distro.
+type EnvironmentStyle struct {
+	Preset          string `yaml:"preset" json:"preset,omitempty"`                   // "lapel-dark" | "amber" | "minimal" | "none"
+	Badge           string `yaml:"badge" json:"badge,omitempty"`                     // custom prompt badge text
+	Banner          *bool  `yaml:"banner" json:"banner,omitempty"`                   // show one-line welcome banner
+	TabColor        string `yaml:"tabColor" json:"tabColor,omitempty"`               // hex color (#RRGGBB)
+	Background      string `yaml:"background" json:"background,omitempty"`           // hex color (#RRGGBB)
+	WindowsTerminal *bool  `yaml:"windowsTerminal" json:"windowsTerminal,omitempty"` // manage Windows Terminal fragment
+}
+
 // Environment mirrors domain.Environment for the manifest's environment section.
 type Environment struct {
 	// Distribution is the target distro name. Use "import" (or leave blank and
@@ -47,6 +58,7 @@ type Environment struct {
 	RootFSImage  string            `yaml:"rootfsImage"`  // pinned image (+checksum) override
 	Runtimes     map[string]string `yaml:"runtimes"`     // toolchain -> pinned major version
 	Packages     []string          `yaml:"packages"`     // extra apt packages (agent-toolkit baseline always applies)
+	Style        EnvironmentStyle  `yaml:"style"`        // shell prompt & Windows Terminal styling
 }
 
 // Provider mirrors domain.Provider minus the secret-backed API key.
@@ -167,6 +179,9 @@ func (m *Manifest) applyDefaults(path string) {
 	if m.Environment.Base == "" && !strings.Contains(strings.ToLower(m.Environment.RootFSImage), "debian") {
 		m.Environment.Base = "ubuntu"
 	}
+	if strings.TrimSpace(m.Environment.Style.Preset) == "" {
+		m.Environment.Style.Preset = "lapel-dark"
+	}
 	if m.Agent.Provider == "" {
 		m.Agent.Provider = m.Provider.Name
 	}
@@ -209,6 +224,14 @@ func (m *Manifest) EnvSpec() domain.Environment {
 		Runtimes:     m.Environment.Runtimes,
 		Packages:     m.Environment.Packages,
 		RootFSImage:  m.Environment.RootFSImage,
+		Style: domain.EnvironmentStyle{
+			Preset:          m.Environment.Style.Preset,
+			Badge:           m.Environment.Style.Badge,
+			Banner:          m.Environment.Style.Banner,
+			TabColor:        m.Environment.Style.TabColor,
+			Background:      m.Environment.Style.Background,
+			WindowsTerminal: m.Environment.Style.WindowsTerminal,
+		},
 	}
 }
 

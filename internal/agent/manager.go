@@ -9,9 +9,9 @@ type Manager struct {
 }
 
 // NewManager creates a new agent manager targeting the specified WSL distro
-// (defaults to "Ubuntu-Lean" if omitted).
+// (defaults to "lapel" if omitted).
 func NewManager(distro ...string) *Manager {
-	d := "Ubuntu-Lean"
+	d := "lapel"
 	if len(distro) > 0 && distro[0] != "" {
 		d = distro[0]
 	}

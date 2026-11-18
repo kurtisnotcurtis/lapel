@@ -17,9 +17,9 @@ type LMStudio struct {
 
 // NewLMStudio creates a new LM Studio provider manager.
 // The distro parameter specifies which WSL distribution to use for commands
-// (defaults to "Ubuntu-Lean" if empty).
+// (defaults to "lapel" if empty).
 func NewLMStudio(distro ...string) *LMStudio {
-	d := "Ubuntu-Lean"
+	d := "lapel"
 	if len(distro) > 0 && distro[0] != "" {
 		d = distro[0]
 	}

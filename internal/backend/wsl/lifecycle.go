@@ -3,6 +3,7 @@ package wsl
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"lapel/internal/backend"
@@ -71,6 +72,9 @@ func (b *DistBackend) Destroy(ctx context.Context, id string) error {
 	// the combination), so route through runWslGlobal.
 	if _, err := runWslGlobal(ctx, "--unregister", id); err != nil {
 		return fmt.Errorf("destroying environment %s: %w", id, err)
+	}
+	if dir, err := DistroStorageDir(id); err == nil && dir != "" {
+		_ = os.RemoveAll(dir)
 	}
 	return nil
 }

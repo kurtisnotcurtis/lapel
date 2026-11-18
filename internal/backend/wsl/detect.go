@@ -14,7 +14,7 @@ import (
 )
 
 // Dist is the WSL distribution name to use. Overridable for testing.
-var Dist = "Ubuntu-Lean"
+var Dist = "lapel"
 
 func wslArgs(args ...string) []string {
 	out := append([]string{"-d", Dist}, args...)

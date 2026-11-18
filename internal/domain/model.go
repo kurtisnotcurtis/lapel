@@ -37,14 +37,26 @@ type Agent struct {
 	Provider string `json:"provider"` // logical provider name reference
 }
 
+// EnvironmentStyle configures the shell prompt, welcome banner, and Windows
+// Terminal appearance for a managed environment.
+type EnvironmentStyle struct {
+	Preset          string `json:"preset,omitempty"`          // "lapel-dark" | "amber" | "minimal" | "none"
+	Badge           string `json:"badge,omitempty"`           // custom prompt badge text (defaults to distro name)
+	Banner          *bool  `json:"banner,omitempty"`          // show one-line login banner
+	TabColor        string `json:"tabColor,omitempty"`        // Windows Terminal tab hex color (#RRGGBB)
+	Background      string `json:"background,omitempty"`      // Windows Terminal scheme background hex (#RRGGBB)
+	WindowsTerminal *bool  `json:"windowsTerminal,omitempty"` // write Windows Terminal JSON fragment
+}
+
 // Environment is a persistent Linux runtime (e.g. WSL2 Ubuntu).
 type Environment struct {
-	Name         string `json:"name"`
-	Backend      string `json:"backend"` // e.g. "wsl"
-	Distribution string `json:"distribution"`
-	Runtimes     map[string]string `json:"runtimes"`  // toolchain -> pinned major version
-	Packages     []string            `json:"packages"`  // apt packages to install
-	RootFSImage  string `json:"rootFSImage"` // pinned rootfs + checksum
+	Name         string            `json:"name"`
+	Backend      string            `json:"backend"` // e.g. "wsl"
+	Distribution string            `json:"distribution"`
+	Runtimes     map[string]string `json:"runtimes"`          // toolchain -> pinned major version
+	Packages     []string          `json:"packages"`          // apt packages to install
+	RootFSImage  string            `json:"rootFSImage"`       // pinned rootfs + checksum
+	Style        EnvironmentStyle  `json:"style,omitempty"`   // shell prompt & terminal styling
 }
 
 // Workspace is a project directory available to a session.

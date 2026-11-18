@@ -17,9 +17,9 @@ type Ollama struct {
 
 // NewOllama creates a new Ollama provider manager.
 // The distro parameter specifies which WSL distribution to use for commands
-// (defaults to "Ubuntu-Lean" if empty).
+// (defaults to "lapel" if empty).
 func NewOllama(distro ...string) *Ollama {
-	d := "Ubuntu-Lean"
+	d := "lapel"
 	if len(distro) > 0 && distro[0] != "" {
 		d = distro[0]
 	}

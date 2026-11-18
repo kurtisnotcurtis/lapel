@@ -7,7 +7,10 @@ import (
 	"strings"
 )
 
-var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+var (
+	nameRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+	hexColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+)
 
 // Validator holds optional semantic validation functions.
 type Validator struct {
@@ -95,6 +98,20 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 	if importing {
 		check(base != "", "environment.distribution=import requires environment.base")
 		check(strings.TrimSpace(m.Environment.Version) != "", "environment.distribution=import requires environment.version (e.g. 24.04)")
+	}
+	switch strings.ToLower(strings.TrimSpace(m.Environment.Style.Preset)) {
+	case "", "lapel-dark", "amber", "minimal", "none":
+	default:
+		problems = append(problems, fmt.Sprintf("environment.style.preset must be lapel-dark|amber|minimal|none (got %q)", m.Environment.Style.Preset))
+	}
+	if tc := strings.TrimSpace(m.Environment.Style.TabColor); tc != "" {
+		check(hexColorRe.MatchString(tc), "environment.style.tabColor must be a #RRGGBB hex color (got %q)", m.Environment.Style.TabColor)
+	}
+	if bg := strings.TrimSpace(m.Environment.Style.Background); bg != "" {
+		check(hexColorRe.MatchString(bg), "environment.style.background must be a #RRGGBB hex color (got %q)", m.Environment.Style.Background)
+	}
+	if strings.ContainsAny(m.Environment.Style.Badge, "\r\n\x00") {
+		problems = append(problems, "environment.style.badge must not contain newlines or NUL bytes")
 	}
 
 	// Provider.

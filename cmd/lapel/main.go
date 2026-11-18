@@ -149,7 +149,7 @@ func doctorCmd() *cobra.Command {
 			}
 
 			if !status.Available {
-				fmt.Println("hint: install a distro via `wsl.exe --install` and set DIST=Ubuntu-Lean or run in native Linux.")
+				fmt.Println("hint: run `lapel setup` or `lapel provision` to create the `lapel` WSL distribution.")
 			} else {
 				fmt.Println("WSL environment is available. Proceed to `lapel env status` for runtime details.")
 			}
@@ -159,22 +159,111 @@ func doctorCmd() *cobra.Command {
 }
 
 func envCmd() *cobra.Command {
+	inspectRun := func(cmd *cobra.Command, _ []string) error {
+		b := &wsl.DistBackend{}
+		st, err := b.Inspect(cmd.Context())
+		if err != nil {
+			return err
+		}
+		fmt.Printf("exists=%v distribution=%q version=%q running=%v\n", st.Exists, st.Distribution, st.Version, st.Running)
+		for k, v := range st.Metadata {
+			fmt.Printf("  %s=%s\n", k, v)
+		}
+		return nil
+	}
 	cmd := &cobra.Command{
-		Use:   "env status",
-		Short: "Inspect the registered distribution runtime state",
+		Use:   "env",
+		Short: "Inspect and customize the managed WSL distribution",
+		RunE:  inspectRun,
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "status",
+			Short: "Inspect the registered distribution runtime state",
+			RunE:  inspectRun,
+		},
+		envStyleCmd(),
+	)
+	return cmd
+}
+
+func envStyleCmd() *cobra.Command {
+	var (
+		preset     string
+		badge      string
+		tabColor   string
+		background string
+		user       string
+		noBanner   bool
+		noWT       bool
+	)
+	cmd := &cobra.Command{
+		Use:   "style",
+		Short: "Apply shell prompt, welcome banner, and Windows Terminal styling to the WSL distro",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			b := &wsl.DistBackend{}
-			st, err := b.Inspect(cmd.Context())
+			ctx := cmd.Context()
+			distro := wsl.Dist
+			spec := domain.EnvironmentStyle{Preset: wsl.PresetLapelDark}
+
+			if m, err := config.LoadEffective(""); err == nil && m != nil {
+				envSpec := m.EnvSpec()
+				if envSpec.Distribution != "" {
+					distro = envSpec.Distribution
+				}
+				spec = envSpec.Style
+				if !cmd.Flags().Changed("user") && m.Jail.User != "" {
+					user = m.Jail.User
+				}
+			}
+
+			if cmd.Flags().Changed("preset") {
+				spec.Preset = preset
+			}
+			if cmd.Flags().Changed("badge") {
+				spec.Badge = badge
+			}
+			if cmd.Flags().Changed("tab-color") {
+				spec.TabColor = tabColor
+			}
+			if cmd.Flags().Changed("background") {
+				spec.Background = background
+			}
+			if cmd.Flags().Changed("no-banner") {
+				b := !noBanner
+				spec.Banner = &b
+			}
+			if cmd.Flags().Changed("no-windows-terminal") {
+				wt := !noWT
+				spec.WindowsTerminal = &wt
+			}
+
+			resolved := wsl.ResolveStyle(distro, spec)
+			if err := wsl.ApplyDistroStyle(ctx, distro, user, spec); err != nil {
+				return err
+			}
+			fragPath, err := wsl.ApplyWindowsTerminalFragment(distro, spec)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("exists=%v distribution=%q version=%q running=%v\n", st.Exists, st.Distribution, st.Version, st.Running)
-			for k, v := range st.Metadata {
-				fmt.Printf("  %s=%s\n", k, v)
+
+			if !resolved.Enabled {
+				fmt.Printf("✓ Removed lapel shell styling and Windows Terminal fragment for %s\n", distro)
+				return nil
+			}
+			fmt.Printf("✓ Applied %q style to %s (badge: %q, banner: %v)\n", resolved.Preset, distro, resolved.Badge, resolved.Banner)
+			if fragPath != "" {
+				fmt.Printf("✓ Updated Windows Terminal fragment: %s (scheme: %q, tabColor: %s)\n", fragPath, resolved.SchemeName, resolved.TabColor)
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&preset, "preset", "", "style preset (lapel-dark, amber, minimal, none)")
+	cmd.Flags().StringVar(&badge, "badge", "", "custom prompt badge text (defaults to distro name)")
+	cmd.Flags().StringVar(&tabColor, "tab-color", "", "Windows Terminal tab hex color (#RRGGBB)")
+	cmd.Flags().StringVar(&background, "background", "", "Windows Terminal background hex color (#RRGGBB)")
+	cmd.Flags().StringVar(&user, "user", "", "Linux user to configure ~/.bashrc and ~/.hushlogin for")
+	cmd.Flags().BoolVar(&noBanner, "no-banner", false, "disable the one-line welcome banner on login")
+	cmd.Flags().BoolVar(&noWT, "no-windows-terminal", false, "skip writing the Windows Terminal JSON fragment")
 	return cmd
 }
 

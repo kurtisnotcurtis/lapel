@@ -28,7 +28,7 @@ type Agent interface {
 // /usr/local/uv/bin), falling back to host exec.LookPath on native Linux.
 func detectBinaryInWSL(ctx context.Context, dist string, candidates ...string) (bool, error) {
 	if dist == "" {
-		dist = "Ubuntu-Lean"
+		dist = "lapel"
 	}
 	if _, err := exec.LookPath("wsl.exe"); err == nil {
 		for _, bin := range candidates {

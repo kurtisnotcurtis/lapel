@@ -61,3 +61,13 @@ func TestRunProviderBenchmark(t *testing.T) {
 		t.Errorf("ModelName = %q, want ornith-35b-q4_k_m", res.ModelName)
 	}
 }
+
+func TestStarterManifestValidates(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/lapel.yaml"
+	cmd := initCmd()
+	cmd.SetArgs([]string{"--path", path})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("initCmd failed: %v", err)
+	}
+}

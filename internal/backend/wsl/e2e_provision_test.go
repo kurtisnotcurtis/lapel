@@ -57,17 +57,9 @@ func TestE2EFreshImportAndSetup(t *testing.T) {
 		} else {
 			t.Logf("cleanup: unregistered %s", name)
 		}
-		if home, herr := os.UserHomeDir(); herr == nil {
-			for _, dir := range []string{
-				filepath.Join(home, "AppData", "Local", "Temp"),
-				os.TempDir(),
-			} {
-				matches, _ := filepath.Glob(filepath.Join(dir, "lapel-import-*"))
-				for _, m := range matches {
-					if err := os.RemoveAll(m); err == nil {
-						t.Logf("cleanup: removed %s", m)
-					}
-				}
+		if dir, derr := DistroStorageDir(name); derr == nil && dir != "" {
+			if err := os.RemoveAll(dir); err == nil {
+				t.Logf("cleanup: removed %s", dir)
 			}
 		}
 	})

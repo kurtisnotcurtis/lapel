@@ -10,7 +10,7 @@ technical decisions from de-risking so you don't relearn them by pain.
 **lapel** is the WSL2 + Local GPU + Coding Agent Control Plane for Windows developers. It solves four tightly coupled problems:
 
 1. **WSL-to-Host Provider Reachability & Hardware Diagnostics** — LM Studio/Ollama runs on the Windows host GPU; coding agents run inside WSL2. `lapel` resolves the dynamic WSL NAT gateway IP from `/proc/net/route`, classifies firewall/bind-address errors, and inspects GPU VRAM via `nvidia-smi`.
-2. **Lean, Jailed WSL2 Execution (`Ubuntu-Lean`)** — Stock Ubuntu wastes 2–4 GB of RAM needed for model weights and leaks Windows `/mnt/c` binaries into `PATH`. `lapel` provisions a minimal Ubuntu baseline (`git`, `curl`, `tmux`, `ripgrep`, `openssh-server`) and enforces a clean Linux `PATH`, filesystem scoping, and process-group teardown.
+2. **Lean, Jailed WSL2 Execution (`lapel` distro)** — Stock Ubuntu wastes 2–4 GB of RAM needed for model weights and leaks Windows `/mnt/c` binaries into `PATH`. `lapel` provisions a minimal Ubuntu baseline (`git`, `curl`, `tmux`, `ripgrep`, `openssh-server`) into `%LOCALAPPDATA%\lapel\distros\lapel`, configures Windows Terminal & shell styling, and enforces a clean Linux `PATH`, filesystem scoping, and process-group teardown.
 3. **Zero-Touch Agent & VS Code Plugin Wiring** — Detects coding agents (`pi`, `claude-code`, `copilot`) inside WSL and generates VRAM-tuned model configurations for VS Code extensions (**Kilo Code**, **Continue**, **Cline**) via `lapel apply --plugin=...` and `lapel plugin sync`.
 4. **Opt-In Hardware Benchmarking & Tuning Insights** — Measures real `tok/s` throughput via `lapel benchmark` and (when `LAPEL_COMMUNITY_ENABLED=true`) shares/queries anonymized hardware-hash tuning profiles via `lapel community`.
 
@@ -18,7 +18,7 @@ technical decisions from de-risking so you don't relearn them by pain.
 
 ## Environment setup (this machine)
 
-- Host: Windows 11; Linux runtime: WSL2 (`wsl.exe`), distro probed as `Ubuntu-Lean`.
+- Host: Windows 11; Linux runtime: WSL2 (`wsl.exe`), distro probed as `lapel`.
 - Build: `./build.sh build` or `make build` — produces `bin/lapel.exe`.
 - Vet: `go vet ./...` — must be clean.
 - Unit tests (no WSL required):

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>lapel — Local Agent Protocol Enhancement Layer</title>
+  <title>lapel: Local Agent Protocol Enhancement Layer</title>
   <meta name="description" content="Pin your Windows host (LM Studio / Ollama) to a purpose-built, sandboxed WSL container for your coding agents — lean and hardware-tuned." />
   <link rel="icon" type="image/svg+xml" href="assets/lapel-logo.svg" />
   <style>
@@ -362,6 +362,220 @@
     .yn { color: #79c0ff; }
     .yc { color: #8b949e; font-style: italic; }
     .yp { color: #8b949e; }
+
+    /* Side-by-side Windows Terminal comparison */
+    .wt-header-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .wt-header-row .section-sub {
+      margin: 0;
+    }
+
+    .preset-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px;
+      font-size: 0.82rem;
+    }
+
+    .preset-toggle span {
+      padding: 0 8px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .preset-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .preset-btn.active {
+      background: var(--surface-alt);
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    }
+
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .wt-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    @media (max-width: 900px) {
+      .wt-grid { grid-template-columns: 1fr; }
+    }
+
+    .wt-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .wt-window {
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid #2b313a;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      font-family: ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, Consolas, monospace;
+    }
+
+    .wt-titlebar {
+      background: #1f1f1f;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 6px 10px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      user-select: none;
+    }
+
+    .wt-tabs {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
+    .wt-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 14px;
+      font-size: 0.76rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 600;
+      color: #e6edf3;
+      border-radius: 7px 7px 0 0;
+      background: #300a24;
+      border-top: 2px solid transparent;
+    }
+
+    .wt-tab-muted {
+      background: #292929;
+      color: #8b949e;
+      font-weight: 500;
+      padding: 6px 10px;
+    }
+
+    .wt-controls {
+      display: flex;
+      gap: 6px;
+      padding-bottom: 8px;
+      padding-right: 4px;
+    }
+
+    .wt-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #484f58;
+    }
+
+    .wt-body {
+      padding: 16px 18px;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      color: #e2e8f0;
+      flex: 1;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .wt-stock .wt-body {
+      background: #24091c;
+      color: #d8dee9;
+    }
+
+    .wt-lapel[data-preset="lapel-dark"] .wt-tab-active {
+      background: #0d1520;
+      border-top-color: #0ea5e9;
+      box-shadow: inset 0 10px 18px -10px rgba(14, 165, 233, 0.35);
+    }
+
+    .wt-lapel[data-preset="lapel-dark"] .wt-body {
+      background: #0d1520;
+    }
+
+    .wt-lapel[data-preset="amber"] .wt-tab-active {
+      background: #18120b;
+      border-top-color: #f59e0b;
+      box-shadow: inset 0 10px 18px -10px rgba(245, 158, 11, 0.38);
+    }
+
+    .wt-lapel[data-preset="amber"] .wt-body {
+      background: #18120b;
+    }
+
+    .t-dim { color: #7d8590; }
+    .t-warn { color: #f87171; }
+    .t-ok { color: #4ade80; font-weight: 600; }
+    .t-dir { color: #60a5fa; font-weight: 600; }
+    .t-jail { color: #fbbf24; font-weight: 700; }
+
+    .wt-lapel[data-preset="lapel-dark"] .t-pill {
+      background: #22d3ee;
+      color: #09131c;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+    .wt-lapel[data-preset="lapel-dark"] .t-accent {
+      color: #22d3ee;
+      font-weight: 700;
+    }
+
+    .wt-lapel[data-preset="amber"] .t-pill {
+      background: #f59e0b;
+      color: #18120b;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+    }
+    .wt-lapel[data-preset="amber"] .t-accent {
+      color: #fbbf24;
+      font-weight: 700;
+    }
+
+    .wt-Callouts {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+    .wt-Callouts strong { color: var(--text); }
   </style>
 </head>
 <body>
@@ -377,6 +591,7 @@
       </a>
       <nav class="nav-links">
         <a href="#layers" class="hide-sm">Layers</a>
+        <a href="#lean-distro" class="hide-sm">WSL Distro</a>
         <a href="#quickstart">Quick Start</a>
         <a href="#integrations" class="hide-sm">Integrations</a>
         <a href="#manifest" class="hide-sm">Manifest</a>
@@ -408,7 +623,7 @@
           <pre><code class="language-bash"><span class="yc"># 1. Check WSL, GPU/VRAM, model tiers &amp; provider reachability</span>
 <span class="yk">lapel</span> <span class="ys">doctor</span>
 
-<span class="yc"># 2. Provision Ubuntu-Lean, mount workspace &amp; apply jail policies</span>
+<span class="yc"># 2. Provision the lean `lapel` WSL distro, mount workspace &amp; apply jail policies</span>
 <span class="yk">lapel</span> <span class="ys">setup</span>
 
 <span class="yc"># 3. Launch your coding agent inside the sandboxed environment</span>
@@ -429,8 +644,8 @@
             <p>Resolves the real Windows host gateway IP from <code>/proc/net/route</code> inside WSL2 and classifies connection-refused vs. timeout vs. bind-address errors from the Linux side.</p>
           </div>
           <div class="card">
-            <h3><span class="num">2</span><span>Lean WSL2 (<code>Ubuntu-Lean</code>)</span></h3>
-            <p>A minimal distro with only what coding agents need (<code>git</code>, <code>curl</code>, <code>tmux</code>, <code>ripgrep</code>, <code>sshd</code>). No GUI apps, no desktop bloat, and <code>PATH</code> filtered to prevent <code>/mnt/c</code> leakage.</p>
+            <h3><span class="num">2</span><span>Lean WSL2 distro (<code>lapel</code>)</span></h3>
+            <p>A purpose-built minimal distro with only what coding agents need (<code>git</code>, <code>curl</code>, <code>tmux</code>, <code>ripgrep</code>, <code>sshd</code>). No GUI apps, clean <code>PATH</code>, and automatic Windows Terminal styling.</p>
           </div>
           <div class="card">
             <h3><span class="num">3</span> Sandboxing &amp; honest reporting</h3>
@@ -439,6 +654,96 @@
           <div class="card">
             <h3><span class="num">4</span> Hardware-aware config sync</h3>
             <p>Detects GPU VRAM and system RAM to recommend model tiers, context windows, and batch sizes, syncing configs to your CLI agents and IDE extensions.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="lean-distro">
+      <div class="container">
+        <div class="wt-header-row">
+          <div>
+            <h2>Know you&rsquo;re in the sandbox &mdash; and keep your RAM for your KV cache</h2>
+            <p class="section-sub">
+              Every megabyte stock WSL wastes on background desktop services is stolen from your model&rsquo;s context window. <code>lapel</code> provisions a stripped <code>lapel</code> WSL2 distribution and drops a zero-touch <strong>Windows Terminal JSON Fragment</strong> so your agent terminal is unmistakable at a glance.
+            </p>
+          </div>
+          <div class="preset-toggle" role="group" aria-label="Terminal style preset">
+            <span>Theme:</span>
+            <button type="button" class="preset-btn active" data-set-preset="lapel-dark">
+              <span class="swatch" style="background: #0ea5e9;"></span>lapel-dark
+            </button>
+            <button type="button" class="preset-btn" data-set-preset="amber">
+              <span class="swatch" style="background: #f59e0b;"></span>amber
+            </button>
+          </div>
+        </div>
+
+        <div class="wt-grid">
+          <div class="wt-col">
+            <div class="wt-window wt-stock">
+              <div class="wt-titlebar">
+                <div class="wt-tabs">
+                  <div class="wt-tab">🐧 Ubuntu</div>
+                  <div class="wt-tab wt-tab-muted">&gt;_ PowerShell</div>
+                </div>
+                <div class="wt-controls"><span class="wt-dot"></span><span class="wt-dot"></span><span class="wt-dot"></span></div>
+              </div>
+              <div class="wt-body"><span class="t-dim">Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 5.15.167.4-microsoft-standard-WSL2)
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+System information as of Tue Nov 17 21:20:04 EST 2026
+  System load:  0.48       Processes:          38
+  Memory usage: 9%         Users logged in:    1</span>
+
+<span class="t-ok">user@DESKTOP</span>:<span class="t-dir">~</span>$ free -m
+               total        used        free      shared  buff/cache   available
+Mem:           16000        <span class="t-warn">1420</span>       13110          42        1470       14280
+
+<span class="t-ok">user@DESKTOP</span>:<span class="t-dir">~</span>$ ps -ef | wc -l &amp;&amp; dpkg-query -f '.\n' -W | wc -l
+<span class="t-warn">38</span>   <span class="t-dim"># snapd, WSLg (Xwayland/weston/pulseaudio), packagekitd, ModemManager...</span>
+<span class="t-warn">784</span>  <span class="t-dim"># general-purpose desktop &amp; server packages</span>
+
+<span class="t-ok">user@DESKTOP</span>:<span class="t-dir">~</span>$ echo $PATH
+/usr/local/bin:/usr/bin:<span class="t-warn">/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Program Files/nodejs:/mnt/c/Users/user/AppData/Local/Programs/Python/Python312...</span></div>
+            </div>
+            <ul class="wt-Callouts">
+              <li>&#10060; <strong>~1.4 GB RAM overhead</strong> on background daemons and WSLg GUI services</li>
+              <li>&#10060; <strong>Host <code>/mnt/c</code> PATH leakage</strong> tricks agents into calling Windows <code>npm</code>/<code>python.exe</code></li>
+              <li>&#10060; <strong>Easy to confuse</strong> with normal shells &mdash; unscoped access to your host drives</li>
+            </ul>
+          </div>
+
+          <div class="wt-col">
+            <div class="wt-window wt-lapel" id="lapel-wt-preview" data-preset="lapel-dark">
+              <div class="wt-titlebar">
+                <div class="wt-tabs">
+                  <div class="wt-tab wt-tab-active">⚡ lapel: ~/project</div>
+                  <div class="wt-tab wt-tab-muted">&gt;_ PowerShell</div>
+                </div>
+                <div class="wt-controls"><span class="wt-dot"></span><span class="wt-dot"></span><span class="wt-dot"></span></div>
+              </div>
+              <div class="wt-body"><span class="t-accent">⚡ lapel</span> <span class="t-dim">&middot; WSL (lapel) &middot; user: agent &middot; Linux-only PATH &middot; jailed (300s timeout)</span>
+
+<span class="t-pill"> ⚡ lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> free -m
+               total        used        free      shared  buff/cache   available
+Mem:           16000         <span class="t-ok">138</span>       15612           2         250       15740
+
+<span class="t-pill"> ⚡ lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> ps -ef
+UID        PID  PPID  CMD
+root         1     0  /sbin/init
+root        84     1  sshd: /usr/sbin/sshd -D [listener]
+agent      112     1  -bash
+
+<span class="t-pill"> ⚡ lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> echo $PATH
+<span class="t-ok">/usr/local/uv/bin:/usr/local/fnm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</span></div>
+            </div>
+            <ul class="wt-Callouts">
+              <li>&#9989; <strong>~140 MB idle footprint</strong> &mdash; reclaims ~1.2 GB of RAM for your model&rsquo;s KV cache</li>
+              <li>&#9989; <strong>Isolated Linux <code>PATH</code></strong> with pre-pinned <code>uv</code> (Python 3.12), <code>fnm</code> (Node LTS), and Go</li>
+              <li>&#9989; <strong>Zero-touch Windows Terminal Fragment</strong> sets tab color, scheme &amp; <code>[jail]</code> badge without touching <code>settings.json</code></li>
+            </ul>
           </div>
         </div>
       </div>
@@ -457,7 +762,7 @@
           </div>
           <div class="step">
             <code>lapel setup</code>
-            <p>Guided setup to verify providers, provision <code>Ubuntu-Lean</code>, mount your workspace, and configure jail policies.</p>
+            <p>Guided setup to verify providers, provision the <code>lapel</code> WSL distro, mount your workspace, and configure jail policies.</p>
           </div>
           <div class="step">
             <code>lapel run</code>
@@ -514,12 +819,15 @@
 <span class="yk">name</span><span class="yp">:</span> <span class="ys">my-project</span>
 
 <span class="yk">environment</span><span class="yp">:</span>
-  <span class="yk">distribution</span><span class="yp">:</span> <span class="ys">Ubuntu-Lean</span>
+  <span class="yk">distribution</span><span class="yp">:</span> <span class="ys">lapel</span>
   <span class="yk">base</span><span class="yp">:</span> <span class="ys">ubuntu</span>
   <span class="yk">version</span><span class="yp">:</span> <span class="ys">"24.04"</span>
   <span class="yk">packages</span><span class="yp">:</span>
     <span class="yp">-</span> <span class="ys">fd-find</span>
     <span class="yp">-</span> <span class="ys">tree</span>
+  <span class="yk">style</span><span class="yp">:</span>
+    <span class="yk">preset</span><span class="yp">:</span> <span class="ys">lapel-dark</span>   <span class="yc"># "lapel-dark" | "amber" | "minimal" | "none"</span>
+    <span class="yk">windowsTerminal</span><span class="yp">:</span> <span class="yn">true</span>
 
 <span class="yk">provider</span><span class="yp">:</span>
   <span class="yk">name</span><span class="yp">:</span> <span class="ys">local</span>
@@ -583,6 +891,17 @@
           btn.textContent = "Copied!";
           setTimeout(() => { btn.textContent = orig; }, 1500);
         } catch (_) {}
+      });
+    });
+
+    const preview = document.getElementById("lapel-wt-preview");
+    document.querySelectorAll("[data-set-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-set-preset]").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        if (preview) {
+          preview.setAttribute("data-preset", btn.getAttribute("data-set-preset"));
+        }
       });
     });
   </script>

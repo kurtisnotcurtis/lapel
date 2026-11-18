@@ -68,8 +68,7 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			}
 
 			if !status.Available {
-				fmt.Println("  ✗ WSL not available. Install a distro via `wsl.exe --install` first.")
-				fmt.Println("    Then set DIST=Ubuntu-Lean or run in native Linux.")
+				fmt.Println("  ✗ WSL not available. Install WSL2 via `wsl.exe --install` or run `lapel provision` to import the `lapel` distro.")
 				return fmt.Errorf("WSL not available")
 			}
 
@@ -151,6 +150,10 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 				return fmt.Errorf("provisioning failed: %w", err)
 			}
 			fmt.Printf("  ✓ Agent-toolkit baseline installed in %s\n", spec.Name)
+			resolvedStyle := wsl.ResolveStyle(spec.Name, spec.Style)
+			if resolvedStyle.Enabled {
+				fmt.Printf("  ✓ Shell prompt & Windows Terminal style applied (%s)\n", resolvedStyle.Preset)
+			}
 
 			// Step 4: Import workspace
 			fmt.Println("\nStep 4/4: Setting up workspace...")

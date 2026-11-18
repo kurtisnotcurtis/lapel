@@ -5,7 +5,7 @@
 `lapel` bridges Windows GPU inference providers (LM Studio, Ollama) with coding agents running in WSL2 and VS Code across four pillars:
 
 1. **Provider reachability** — Verify and route WSL-to-Windows inference connections reliably.
-2. **Lean WSL2 environment** — Provision a minimal `Ubuntu-Lean` distro so your RAM goes to your model's KV cache, not background desktop services.
+2. **Lean WSL2 environment** — Provision a minimal `lapel` distro so your RAM goes to your model's KV cache, not background desktop services.
 3. **Agent sandboxing** — Scope filesystem access, strip host `PATH` leakage, and report enforcement status honestly.
 4. **Hardware-aware config sync & tuning** — Detect GPU/VRAM specs, recommend model tiers and context windows, and sync configurations across CLI agents and IDE plugins.
 
@@ -38,22 +38,24 @@ lapel provider model-list --provider lm-studio
 
 ---
 
-### 2. Lean environment (`Ubuntu-Lean`) 🥈
+### 2. Lean environment (`lapel` WSL distro) 🥈
 
 Stock Ubuntu from the Microsoft Store is a general-purpose OS living inside Windows — systemd services, background daemons, full `PATH` with `/mnt/c`, and GUI apps. When your inference server is also running on the same machine, every MB of RAM and percent of CPU that WSL wastes is taken directly from your model.
 
 A purpose-built minimal distro is a feature, not a limitation:
 
-- **Automatic provisioning**: Imports a fresh Ubuntu/Debian rootfs with checksum verification
+- **Automatic provisioning**: Imports a fresh Ubuntu/Debian rootfs into `%LOCALAPPDATA%\lapel\distros\lapel` with checksum verification
 - **Idempotent package management**: Installs only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`, `procps`, `iproute2`, etc.)
 - **SSH ready**: Configures key-based authentication automatically
 - **PATH filtering**: Strips `/mnt/c` and `/mnt/d` from `PATH` to prevent Windows host tool leakage
+- **Distinctive shell & Windows Terminal styling**: Applies a branded shell prompt (`⚡ lapel [jail]`), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, icon, and color scheme without modifying your user `settings.json`)
 - **Resource-conscious by design**: No GUI apps (`guiApplications=false`), minimal background services, `.wslconfig` cap inspection (`lapel config`)
 
 ```bash
-lapel env status          # inspect registered distro runtime state
-lapel config              # inspect host .wslconfig memory/CPU caps and networking warnings
-lapel provision           # build the agent-optimized Ubuntu-Lean baseline (idempotent)
+lapel env status                  # inspect registered distro runtime state
+lapel env style --preset=amber    # switch WSL prompt & Windows Terminal theme preset
+lapel config                      # inspect host .wslconfig memory/CPU caps and networking warnings
+lapel provision                   # build the agent-optimized lapel WSL baseline (idempotent)
 ```
 
 ---
@@ -97,7 +99,7 @@ doctor → setup → run
 | Step | Command | What happens |
 |------|---------|--------------|
 | **1. Doctor** | `lapel doctor` | Checks WSL2 availability, kernel/GPU status, hardware specs, and model tier recommendation |
-| **2. Setup** | `lapel setup` | One command: checks providers, provisions `Ubuntu-Lean`, imports workspace, and configures jail |
+| **2. Setup** | `lapel setup` | One command: checks providers, provisions the `lapel` WSL distro, imports workspace, and configures jail |
 | **3. Run** | `lapel run` | Detects your installed coding agent, wires it to your active provider, and launches a sandboxed session |
 | **Troubleshoot** | `lapel status` / `lapel provider reachability` | Inspects drift against baseline and classifies WSL-to-Windows networking issues |
 
@@ -121,13 +123,20 @@ apiVersion: lapel.dev/v1
 name: lapel-project
 
 environment:
-  distribution: Ubuntu-Lean
+  distribution: lapel
   base: ubuntu          # "ubuntu" | "debian"; defaults to "ubuntu"
   version: "24.04"      # pinned release; auto-selected default when omitted
   packages:             # additional apt packages beyond the built-in agent toolkit
     - ripgrep
     - fd-find
     - tree
+  style:
+    preset: lapel-dark  # "lapel-dark" (default) | "amber" | "minimal" | "none"
+    badge: ""           # optional custom prompt badge (defaults to distro name)
+    banner: true        # show one-line status banner on interactive shell login
+    tabColor: ""        # optional hex override for Windows Terminal tab (#RRGGBB)
+    background: ""      # optional hex override for Windows Terminal scheme (#RRGGBB)
+    windowsTerminal: true
 
 provider:
   name: local
@@ -169,7 +178,7 @@ graph TD
         V["VS Code Plugins<br/>(Kilo Code / Continue / Cline)"]
     end
 
-    subgraph WSL2Dist["WSL2 Distribution (Ubuntu-Lean)"]
+    subgraph WSL2Dist["WSL2 Distribution (lapel)"]
         D["Sandboxed Agent User<br/>(Pi / Claude Code / Copilot)"]
         E["SSH & Process Group Lifecycle"]
         F["Jail Enforcer & Scoped Workspace"]

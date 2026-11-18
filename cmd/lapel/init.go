@@ -69,8 +69,8 @@ name: lapel-project
 # The runtime environment this agent runs inside (WSL2 distro on Windows, or
 # native Linux). Leave distribution blank to import a fresh pinned rootfs.
 environment:
-  # Pre-existing distro name (e.g. "Ubuntu-Lean"). Use "import" + base/version
-  # below to have lapel create a new one.
+  # WSL distribution name (defaults to "lapel"). Use "import" + base/version
+  # below to have lapel create a fresh pinned rootfs.
   distribution: ""
   # base: ubuntu | debian ; version: e.g. "24.04" / "12"
   base: ubuntu
@@ -86,6 +86,15 @@ environment:
     rust: ""
   # Extra apt packages beyond the agent-toolkit minimum.
   packages: []
+  # Visual prompt, welcome banner, and Windows Terminal profile styling.
+  # Presets: "lapel-dark" (default), "amber", "minimal", "none".
+  style:
+    preset: lapel-dark
+    badge: ""
+    banner: true
+    tabColor: ""
+    background: ""
+    windowsTerminal: true
 
 # The inference provider this agent talks to. A local LM Studio endpoint is
 # shown by default; point baseURL at any OpenAI-compatible server to switch.

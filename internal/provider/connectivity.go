@@ -158,4 +158,4 @@ func classifyProbe(r probeResult, localhost bool) Result {
 	return classifyEndpoint(r)
 }
 
-func distro() string { return "Ubuntu-Lean" }
+func distro() string { return "lapel" }

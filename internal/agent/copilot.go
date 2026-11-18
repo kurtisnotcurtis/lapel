@@ -11,7 +11,7 @@ type CopilotAgent struct {
 }
 
 func NewCopilotAgent(distro ...string) *CopilotAgent {
-	d := "Ubuntu-Lean"
+	d := "lapel"
 	if len(distro) > 0 && distro[0] != "" {
 		d = distro[0]
 	}

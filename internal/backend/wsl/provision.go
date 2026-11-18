@@ -87,6 +87,9 @@ type ProvisionOptions struct {
 	// When empty, DefaultProvisionOptions fills in ~/.ssh/id_ed25519.pub. If the
 	// file does not exist, SSH key setup is skipped (not an error).
 	SSHPublicKeyPath string
+	// Style configures the visual shell prompt, login banner, and Windows
+	// Terminal fragment for the distribution.
+	Style domain.EnvironmentStyle
 }
 
 // DefaultProvisionOptions derives generic options from an environment spec. the
@@ -123,6 +126,7 @@ func DefaultProvisionOptions(spec domain.Environment) ProvisionOptions {
 		EnsurePackages:   true,
 		DefaultUser:      user,
 		SSHPublicKeyPath: keyPath,
+		Style:            spec.Style,
 	}
 }
 
@@ -265,14 +269,13 @@ func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 		}
 	}
 
-	// The VHDX container must live on an NTFS drive WSL can write to. `wsl
-	// --import` runs on the host and requires Windows paths for both the install
-	// location and the archive — a /mnt/c/... path fails at HCS with
-	// 0x800704b0 (verified 2026-11) — so use the native temp dir.
-	tag := "lapel-import-" + randTag()
-	installLoc, err := importTargetDir(tag)
+	// The VHDX container must live on a persistent NTFS directory WSL can write
+	// to (%LOCALAPPDATA%\lapel\distros\<name>). `wsl --import` runs on the host
+	// and requires Windows paths for both the install location and the archive —
+	// a /mnt/c/... path fails at HCS with 0x800704b0 (verified 2026-11).
+	installLoc, err := DistroStorageDir(opts.Name)
 	if err != nil {
-		return fmt.Errorf("creating import target %s: %w", installLoc, err)
+		return fmt.Errorf("creating distro storage dir %s: %w", installLoc, err)
 	}
 
 	// WSL's --import only accepts a local archive path — passing the URL
@@ -628,6 +631,12 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 			return err
 		}
 	}
+	if err := ApplyDistroStyle(ctx, opts.Name, user, opts.Style); err != nil {
+		return fmt.Errorf("applying distro style: %w", err)
+	}
+	if _, err := ApplyWindowsTerminalFragment(opts.Name, opts.Style); err != nil {
+		return fmt.Errorf("updating Windows Terminal fragment: %w", err)
+	}
 	return nil
 }
 
@@ -666,12 +675,44 @@ func parseInstalledPackages(out string) map[string]bool {
 	return installed
 }
 
-// importTargetDir returns a writable directory for the VHDX container: on the
-// host mount when inside WSL, otherwise a local temp dir.
-// importTargetDir creates (and returns) the directory that will hold the
-// imported distro's ext4.vhdx. It must be a Windows path: wsl --import runs
-// on the host and HCS rejects WSL-style /mnt/... paths.
-func importTargetDir(tag string) (string, error) {
-	target := filepath.Join(os.TempDir(), tag)
+// DistroStorageDir creates and returns the persistent Windows host directory
+// that holds the imported distro's ext4.vhdx (%LOCALAPPDATA%\lapel\distros\<name>).
+// Placing VHDX files under LocalAppData instead of %TEMP% prevents Windows
+// Storage Sense / temp cleanup from deleting the registered distro's disk.
+func DistroStorageDir(distroName string) (string, error) {
+	safeName := sanitizeDistroDirName(distroName)
+	base := os.Getenv("LOCALAPPDATA")
+	if base == "" {
+		if profile := os.Getenv("USERPROFILE"); profile != "" {
+			candidate := filepath.Join(profile, "AppData", "Local")
+			if fi, err := os.Stat(candidate); err == nil && fi.IsDir() {
+				base = candidate
+			}
+		}
+	}
+	if base == "" {
+		base = os.TempDir()
+	}
+	target := filepath.Join(base, "lapel", "distros", safeName)
 	return target, os.MkdirAll(target, 0o755)
+}
+
+func sanitizeDistroDirName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return Dist
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	out := strings.Trim(b.String(), ".")
+	if out == "" {
+		return Dist
+	}
+	return out
 }

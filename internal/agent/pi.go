@@ -11,7 +11,7 @@ type PiAgent struct {
 }
 
 func NewPiAgent(distro ...string) *PiAgent {
-	d := "Ubuntu-Lean"
+	d := "lapel"
 	if len(distro) > 0 && distro[0] != "" {
 		d = distro[0]
 	}

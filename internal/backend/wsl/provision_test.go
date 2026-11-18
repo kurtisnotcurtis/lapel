@@ -96,3 +96,16 @@ func TestParseInstalledPackages(t *testing.T) {
 		t.Errorf("three-word legacy status line should not count as installed")
 	}
 }
+
+func TestDistroStorageDirUsesLocalAppData(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("LOCALAPPDATA", tmp)
+
+	dir, err := DistroStorageDir("lapel")
+	if err != nil {
+		t.Fatalf("DistroStorageDir: %v", err)
+	}
+	if !strings.HasPrefix(dir, tmp) || !strings.HasSuffix(dir, "lapel") {
+		t.Errorf("unexpected storage dir %q (want under %q ending in lapel)", dir, tmp)
+	}
+}

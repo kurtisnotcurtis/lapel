@@ -8,9 +8,9 @@ type Registry struct {
 }
 
 // NewRegistry creates a new provider registry with default providers.
-// The distro parameter specifies which WSL distribution to use (defaults to "Ubuntu-Lean").
+// The distro parameter specifies which WSL distribution to use (defaults to "lapel").
 func NewRegistry(distro ...string) *Registry {
-	d := "Ubuntu-Lean"
+	d := "lapel"
 	if len(distro) > 0 && distro[0] != "" {
 		d = distro[0]
 	}

@@ -43,13 +43,16 @@ lapel doctor                  # verify WSL, GPU/VRAM, and provider reachability
 lapel provider reachability   # probe Windows inference endpoint from inside WSL
 ```
 
-### 2. Lean WSL2 environment (`Ubuntu-Lean`)
+### 2. Lean WSL2 environment (`lapel`)
 
-A purpose-built minimal distro with only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`). No GUI apps (`guiApplications=false`), no background desktop bloat, and `PATH` filtered to strip `/mnt/c` host tool leakage. Every MB saved in WSL goes back to your model.
+A purpose-built minimal distro with only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`), persisted under `%LOCALAPPDATA%\lapel\distros\lapel`. No GUI apps (`guiApplications=false`), no background desktop bloat, and `PATH` filtered to strip `/mnt/c` host tool leakage. Every MB saved in WSL goes back to your model.
+
+`lapel` also styles your managed distro out of the box—applying a distinctive shell prompt (`⚡ lapel [jail]`), replacing Ubuntu's noisy MOTD with a single-line status banner, and dropping a zero-touch **Windows Terminal JSON Fragment** (setting tab color, icon, and color scheme without modifying your user `settings.json`).
 
 ```bash
-lapel provision               # build the agent-optimized Ubuntu-Lean baseline
-lapel env status              # inspect runtime state
+lapel provision                    # build the agent-optimized lapel WSL baseline
+lapel env status                   # inspect runtime state
+lapel env style --preset=amber     # switch WSL prompt & Windows Terminal theme preset
 ```
 
 ### 3. Agent sandboxing & honest reporting
@@ -80,7 +83,7 @@ doctor → setup → run
 ```
 
 1. **`lapel doctor`** — Check WSL availability, GPU/VRAM specs, model tier recommendations, and provider reachability.
-2. **`lapel setup`** — One command to verify providers, provision `Ubuntu-Lean`, mount your workspace, and configure jail policies.
+2. **`lapel setup`** — One command to verify providers, provision the `lapel` WSL distro, mount your workspace, and configure jail policies.
 3. **`lapel run`** — Launch your coding agent (`pi`, `claude-code`, `copilot`) inside the sandboxed WSL environment connected to your Windows inference provider.
 
 For declarative environments and teams: `init`, `plan`, `apply`, and `status` manage your setup via a `lapel.yaml` manifest backed by SQLite drift detection (`.lapel/state.db`).
@@ -124,12 +127,15 @@ apiVersion: lapel.dev/v1
 name: my-project
 
 environment:
-  distribution: Ubuntu-Lean
+  distribution: lapel
   base: ubuntu
   version: "24.04"
   packages:
     - fd-find
     - tree
+  style:
+    preset: lapel-dark   # "lapel-dark" (default) | "amber" | "minimal" | "none"
+    windowsTerminal: true
 
 provider:
   name: local

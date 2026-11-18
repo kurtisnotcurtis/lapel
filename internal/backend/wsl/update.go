@@ -74,7 +74,7 @@ func CheckGPUStatus(ctx context.Context) (GPUStatus, error) {
 	fmt.Fprintf(os.Stderr, "[DEBUG] status initialized, calling runWslWith\n")
 
 	// Try to detect NVIDIA GPU via nvidia-smi (via stdin with full path)
-	out, err := runWslWithInput(ctx, []string{"-d", "Ubuntu-Lean", "bash"}, `/usr/lib/wsl/lib/nvidia-smi --query-gpu=name,driver_version --format=csv,noheader`)
+	out, err := runWslWithInput(ctx, []string{"-d", Dist, "bash"}, `/usr/lib/wsl/lib/nvidia-smi --query-gpu=name,driver_version --format=csv,noheader`)
 	fmt.Printf("[DEBUG] query-gpu: out=%q err=%v\n", out, err)
 	if err != nil {
 		status.Message = fmt.Sprintf("NVIDIA GPU not detected: %v", err)
@@ -105,7 +105,7 @@ func CheckGPUStatus(ctx context.Context) (GPUStatus, error) {
 	// Get CUDA UMD runtime version from nvidia-smi header.
 	// Priority: "CUDA UMD Version" (user-mode driver, what ML runtimes use)
 	// over "CUDA Version" (legacy/compatibility line).
-	outFull, _ := runWslWith(ctx, []string{"-d", "Ubuntu-Lean", "bash", "-c", `nvidia-smi`})
+	outFull, _ := runWslWith(ctx, []string{"-d", Dist, "bash", "-c", `nvidia-smi`})
 	if outFull != "" {
 		for _, line := range strings.Split(outFull, "\n") {
 			if idx := strings.Index(line, "CUDA UMD Version: "); idx != -1 {

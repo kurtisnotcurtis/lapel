@@ -44,6 +44,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if m.Environment.Base != "ubuntu" {
 		t.Errorf("environment.base default = %q, want ubuntu", m.Environment.Base)
 	}
+	if m.Environment.Style.Preset != "lapel-dark" {
+		t.Errorf("environment.style.preset default = %q, want lapel-dark", m.Environment.Style.Preset)
+	}
 	if m.Jail.Profile != "developer" {
 		t.Errorf("jail.profile default = %q, want developer", m.Jail.Profile)
 	}
@@ -88,6 +91,13 @@ func TestValidateCatchesProblems(t *testing.T) {
 		{"provider mismatch", func(m *Manifest) { m.Agent.Provider = "other"; m.Provider.Name = "local" }, true},
 		{"bad importMode", func(m *Manifest) { m.Workspace.ImportMode = "symlink" }, true},
 		{"bad network", func(m *Manifest) { m.Jail.Network = "airgap" }, true},
+		{"bad style preset", func(m *Manifest) { m.Environment.Style.Preset = "neon" }, true},
+		{"valid style preset amber", func(m *Manifest) { m.Environment.Style.Preset = "amber" }, false},
+		{"bad tabColor", func(m *Manifest) { m.Environment.Style.TabColor = "blue" }, true},
+		{"valid tabColor", func(m *Manifest) { m.Environment.Style.TabColor = "#0EA5E9" }, false},
+		{"bad background", func(m *Manifest) { m.Environment.Style.Background = "#12345" }, true},
+		{"valid background", func(m *Manifest) { m.Environment.Style.Background = "#0D1520" }, false},
+		{"bad badge newline", func(m *Manifest) { m.Environment.Style.Badge = "bad\nbadge" }, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
