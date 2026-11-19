@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lapel Community Hardware Intelligence Design &middot; lapel</title>
+  <meta name="description" content="lapel documentation: Lapel Community Hardware Intelligence Design" />
+  <link rel="icon" type="image/svg+xml" href="assets/lapel-logo.svg" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="index.html">
+        <svg viewBox="0 25 100 100" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M 46.5,116 C 34,102 21,84 9,65 L 21,60 L 9,55 L 14,39.5 C 30,31.5 70,32 86,40.5 L 91,56.5 L 79,61.5 L 91,66.5 C 79,85 65.5,102.5 52.5,116.8" />
+          <path d="M 46.5,116 C 41.5,95 39,79 37.2,65 C 36.2,57.2 37.5,50.5 42.5,47.5 C 38.8,47 35,46.2 31.5,45.2" />
+          <path d="M 52.5,116.8 C 57.5,95.5 60.5,80 62.3,66 C 63.3,58.2 61.8,51.5 56.8,48.5 C 60.5,48 64.3,47.2 67.8,46.2" />
+        </svg>
+        <span>lapel</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="index.html" class="hide-sm">Overview</a>
+        <a href="features.html">Features</a>
+        <a href="community-design.html" class="active">Community</a>
+        <a href="e2e-testing.html">E2E Testing</a>
+        <a href="wsl-dns-issue.html">WSL DNS</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container doc-shell">
+    <aside class="doc-sidebar" aria-label="Documentation navigation">
+      <div class="doc-sidebar-group">
+        <h2 class="doc-sidebar-title">Documentation</h2>
+        <ul class="doc-nav-list">
+          <li><a href="index.html">Home &amp; Quick Start</a></li>
+          <li><a href="features.html">Feature Guide</a></li>
+          <li><a href="community-design.html" class="active">Community Design</a></li>
+          <li><a href="e2e-testing.html">E2E Testing</a></li>
+          <li><a href="wsl-dns-issue.html">WSL DNS Issue</a></li>
+        </ul>
+      </div>
+      <div class="doc-sidebar-group">
+        <h2 class="doc-sidebar-title">On this page</h2>
+        <ul class="doc-toc-list">
+          <li class="toc-h2"><a href="#vision">Vision</a></li>
+          <li class="toc-h2"><a href="#core-architecture">Core Architecture</a></li>
+          <li class="toc-h3"><a href="#1-hardware-detection-internalhardware">1. Hardware Detection (internal/hardware/)</a></li>
+          <li class="toc-h3"><a href="#2-two-part-deterministic-hardware-hash-communitymodelgo">2. Two-Part Deterministic Hardware Hash (community/model.go)</a></li>
+          <li class="toc-h3"><a href="#3-shared-data-contract-communitymodelgo">3. Shared Data Contract (community/model.go)</a></li>
+          <li class="toc-h2"><a href="#on-demand-cli-workflows-no-background-daemons">On-Demand CLI Workflows (No Background Daemons)</a></li>
+          <li class="toc-h3"><a href="#1-lapel-benchmark-or-lapel-community-benchmark">1. lapel benchmark (or lapel community benchmark)</a></li>
+          <li class="toc-h3"><a href="#2-lapel-community-status">2. lapel community status</a></li>
+          <li class="toc-h3"><a href="#3-lapel-community-insights">3. lapel community insights</a></li>
+          <li class="toc-h3"><a href="#4-lapel-community-share">4. lapel community share</a></li>
+          <li class="toc-h2"><a href="#rest-api-contract">REST API Contract</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <article class="doc-article">
+      <div class="doc-breadcrumb">
+        <a href="index.html">&larr; Back to lapel overview</a>
+        <a class="doc-source-link" href="COMMUNITY_DESIGN.md">View raw COMMUNITY_DESIGN.md</a>
+      </div>
+      <h1 id="lapel-community-hardware-intelligence-design">Lapel Community Hardware Intelligence Design</h1>
+<h2 id="vision">Vision <a class="heading-anchor" href="#vision" aria-label="Link to Vision">#</a></h2>
+<p>Build an <strong>opt-in, empirical hardware tuning index</strong> for local AI coding rigs that makes <code>lapel</code>:</p>
+<ul>
+<li><strong>Immediately useful</strong> — Answers <em>&#34;Which quant, batch size, and context window actually run best on my GPU + RAM tier without OOMing when WSL2 + VS Code are open?&#34;</em></li>
+<li><strong>Privacy-first by default</strong> — Strictly opt-in (<code>LAPEL_COMMUNITY_ENABLED=false</code> by default), with zero background daemons, zero prompt/code capture, and deterministic SHA-256 hardware hashing.</li>
+<li><strong>Compounding</strong> — Every verified benchmark shared via <code>lapel benchmark --share</code> improves recommendations for other developers on the same GPU/VRAM tier.</li>
+</ul>
+<hr />
+<h2 id="core-architecture">Core Architecture <a class="heading-anchor" href="#core-architecture" aria-label="Link to Core Architecture">#</a></h2>
+<h3 id="1-hardware-detection-internalhardware">1. Hardware Detection (<code>internal/hardware/</code>) <a class="heading-anchor" href="#1-hardware-detection-internalhardware" aria-label="Link to 1. Hardware Detection (internal/hardware/)">#</a></h3>
+<p>Detects the host GPU, VRAM, system RAM, and CPU (<code>nvidia-smi</code> + OS memory/CPU inspection) and normalizes them into a <code>community.HardwareProfile</code>:</p>
+<div class="code-wrap"><span class="code-lang">go</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-go">type HardwareProfile struct {
+    OS         string    `json:&#34;os&#34;`
+    RAM        int64     `json:&#34;ram_gb&#34;`
+    GPUs       []GPUInfo `json:&#34;gpus&#34;`
+    CPUModel   string    `json:&#34;cpu_model&#34;`
+    CPUCores   int       `json:&#34;cpu_cores&#34;`
+    DetectedAt time.Time `json:&#34;detected_at&#34;`
+}</code></pre></div>
+<h3 id="2-two-part-deterministic-hardware-hash-communitymodelgo">2. Two-Part Deterministic Hardware Hash (<code>community/model.go</code>) <a class="heading-anchor" href="#2-two-part-deterministic-hardware-hash-communitymodelgo" aria-label="Link to 2. Two-Part Deterministic Hardware Hash (community/model.go)">#</a></h3>
+<p><code>HardwareProfile.Hash()</code> computes a 16-character hex identifier:</p>
+<ul>
+<li><strong>First 8 hex chars (Tier Prefix)</strong>: SHA-256 of normalized <code>GPU name + VRAM GB</code> (e.g. <code>nvidia rtx 4090:24</code>). Allows the similarity engine to match all users with the same GPU/VRAM tier even if their CPU or system RAM differs slightly.</li>
+<li><strong>Second 8 hex chars (Full Rig Suffix)</strong>: SHA-256 of normalized <code>OS + RAM bucket + GPU + CPU cores</code>. Allows exact-rig matching when sufficient samples exist.</li>
+</ul>
+<h3 id="3-shared-data-contract-communitymodelgo">3. Shared Data Contract (<code>community/model.go</code>) <a class="heading-anchor" href="#3-shared-data-contract-communitymodelgo" aria-label="Link to 3. Shared Data Contract (community/model.go)">#</a></h3>
+<p>Exported at the top level of the <code>lapel</code> module so both the public CLI (<code>lapel</code>) and the community backend (<code>lapel-product</code>) compile against the exact same structs:</p>
+<div class="code-wrap"><span class="code-lang">go</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-go">type Report struct {
+    ID           string      `json:&#34;id,omitempty&#34;`
+    UserID       string      `json:&#34;user_id,omitempty&#34;`
+    HardwareHash string      `json:&#34;hardware_hash&#34;`
+    Models       []ModelPerf `json:&#34;models&#34;`
+    Agents       []AgentPerf `json:&#34;agents,omitempty&#34;`
+    ConfigHash   string      `json:&#34;config_hash,omitempty&#34;`
+    ReportedAt   time.Time   `json:&#34;reported_at&#34;`
+}
+
+type ModelPerf struct {
+    Name        string  `json:&#34;name&#34;`
+    Provider    string  `json:&#34;provider&#34;`
+    VRAMUsed    float64 `json:&#34;vram_used_gb&#34;`
+    BatchSize   int     `json:&#34;batch_size&#34;`
+    LoadTimeSec float64 `json:&#34;load_time_sec,omitempty&#34;`
+    TokenRate   float64 `json:&#34;token_rate&#34;`
+    UserRating  int     `json:&#34;user_rating,omitempty&#34;`
+    Notes       string  `json:&#34;notes,omitempty&#34;`
+}
+
+type Recommendation struct {
+    Type        string  `json:&#34;type&#34;`         // &#34;model&#34;, &#34;agent&#34;, &#34;config&#34;
+    Title       string  `json:&#34;title&#34;`        // e.g., &#34;Ornith 35B (batch size 16)&#34;
+    Description string  `json:&#34;description&#34;`  // Avg tok/s and VRAM usage
+    Confidence  float64 `json:&#34;confidence&#34;`   // 0.0 - 1.0
+    SourceCount int     `json:&#34;source_count&#34;` // Number of corroborating reports
+    MatchReason string  `json:&#34;match_reason&#34;` // Exact rig match vs. GPU/VRAM tier match
+}</code></pre></div>
+<hr />
+<h2 id="on-demand-cli-workflows-no-background-daemons">On-Demand CLI Workflows (No Background Daemons) <a class="heading-anchor" href="#on-demand-cli-workflows-no-background-daemons" aria-label="Link to On-Demand CLI Workflows (No Background Daemons)">#</a></h2>
+<h3 id="1-lapel-benchmark-or-lapel-community-benchmark">1. <code>lapel benchmark</code> (or <code>lapel community benchmark</code>) <a class="heading-anchor" href="#1-lapel-benchmark-or-lapel-community-benchmark" aria-label="Link to 1. lapel benchmark (or lapel community benchmark)">#</a></h3>
+<p>Runs a standardized coding prompt against the active local OpenAI-compatible provider (LM Studio or Ollama), measures real token throughput (<code>tok/s</code>), renders a shareable <strong>Lapel Rig Benchmark Card</strong>, and optionally uploads the verified report when <code>--share</code> is passed:</p>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash"># Preview the measured report locally without network calls
+$ lapel benchmark --dry-run
+
+# Run and publish to the community index (requires opt-in flag)
+$ LAPEL_COMMUNITY_ENABLED=true lapel benchmark --share</code></pre></div>
+<h3 id="2-lapel-community-status">2. <code>lapel community status</code> <a class="heading-anchor" href="#2-lapel-community-status" aria-label="Link to 2. lapel community status">#</a></h3>
+<p>Displays the local machine&#39;s deterministic hardware hash, GPU/VRAM tier prefix, and current opt-in state.</p>
+<h3 id="3-lapel-community-insights">3. <code>lapel community insights</code> <a class="heading-anchor" href="#3-lapel-community-insights" aria-label="Link to 3. lapel community insights">#</a></h3>
+<p>Queries <code>GET /api/v1/recommendations?hash=&lt;hash&gt;&amp;limit=5</code> for verified tuning recommendations from matching hardware (or falls back to local deterministic VRAM heuristics when offline or when <code>LAPEL_COMMUNITY_ENABLED=false</code>).</p>
+<h3 id="4-lapel-community-share">4. <code>lapel community share</code> <a class="heading-anchor" href="#4-lapel-community-share" aria-label="Link to 4. lapel community share">#</a></h3>
+<p>Allows manual submission of session metrics (<code>--model</code>, <code>--provider</code>, <code>--vram</code>, <code>--batch-size</code>, <code>--token-rate</code>, <code>--dry-run</code>).</p>
+<hr />
+<h2 id="rest-api-contract">REST API Contract <a class="heading-anchor" href="#rest-api-contract" aria-label="Link to REST API Contract">#</a></h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Endpoint</th><th>Method</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td><code>/api/v1/reports</code></td><td><code>POST</code></td><td>Submit an anonymized <code>community.Report</code> payload</td></tr>
+<tr><td><code>/api/v1/reports/{hash}</code></td><td><code>GET</code></td><td>Retrieve aggregated report count, average VRAM, and average <code>tok/s</code> for a hardware hash</td></tr>
+<tr><td><code>/api/v1/recommendations?hash={hash}&amp;limit=5</code></td><td><code>GET</code></td><td>Retrieve ranked <code>[]community.Recommendation</code> entries matched by exact hash or 8-char GPU/VRAM tier prefix</td></tr>
+</tbody></table></div>
+
+    </article>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>&copy; 2026 lapel &middot; Licensed under Apache 2.0</div>
+      <div class="footer-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Feature Guide</a>
+        <a href="community-design.html">Community Design</a>
+        <a href="e2e-testing.html">E2E Testing</a>
+        <a href="wsl-dns-issue.html">WSL DNS Issue</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll(".copy-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const wrap = btn.closest(".code-wrap");
+        const code = wrap ? wrap.querySelector("code") : null;
+        const text = code ? code.innerText : "";
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.textContent;
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        } catch (_) {}
+      });
+    });
+  </script>
+</body>
+</html>

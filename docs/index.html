@@ -6,108 +6,8 @@
   <title>lapel: Local Agent Protocol Enhancement Layer</title>
   <meta name="description" content="Pin your Windows host (LM Studio / Ollama) to a purpose-built, sandboxed WSL container for your coding agents — lean and hardware-tuned." />
   <link rel="icon" type="image/svg+xml" href="assets/lapel-logo.svg" />
+  <link rel="stylesheet" href="assets/site.css" />
   <style>
-    :root {
-      --bg: #f8f9fa;
-      --surface: #ffffff;
-      --surface-alt: #f1f3f5;
-      --border: #dee2e6;
-      --text: #1c1e21;
-      --text-muted: #5c6470;
-      --accent: #2f7d4f;
-      --accent-soft: rgba(47, 125, 79, 0.1);
-      --logo-stroke: #3a3a3a;
-      --code-bg: #161b22;
-      --code-text: #e6edf3;
-      --radius: 10px;
-      --max-w: 1160px;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0d1117;
-        --surface: #161b22;
-        --surface-alt: #1c2128;
-        --border: #30363d;
-        --text: #e6edf3;
-        --text-muted: #8b949e;
-        --accent: #4caf73;
-        --accent-soft: rgba(76, 175, 115, 0.14);
-        --logo-stroke: #e6edf3;
-        --code-bg: #090c10;
-        --code-text: #e6edf3;
-      }
-    }
-
-    * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    .container {
-      max-width: var(--max-w);
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    /* Header */
-    header {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      background: color-mix(in srgb, var(--bg) 88%, transparent);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 60px;
-      gap: 16px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 1.15rem;
-      color: var(--text);
-      letter-spacing: -0.02em;
-    }
-    .brand:hover { text-decoration: none; }
-
-    .brand svg {
-      width: 28px;
-      height: 28px;
-      stroke: var(--logo-stroke);
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      font-size: 0.92rem;
-    }
-
-    .nav-links a { color: var(--text-muted); font-weight: 500; }
-    .nav-links a:hover { color: var(--text); text-decoration: none; }
-
-    @media (max-width: 640px) {
-      .nav-links .hide-sm { display: none; }
-    }
-
     /* Hero */
     .hero {
       padding: 72px 0 56px;
@@ -248,41 +148,6 @@
       flex-shrink: 0;
     }
 
-    /* Code blocks */
-    .code-wrap {
-      position: relative;
-      max-width: 720px;
-      margin: 0 auto;
-      text-align: left;
-    }
-
-    pre {
-      margin: 0;
-      background: var(--code-bg);
-      color: var(--code-text);
-      padding: 18px 20px;
-      border-radius: var(--radius);
-      overflow-x: auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.88rem;
-      line-height: 1.55;
-      border: 1px solid var(--border);
-    }
-
-    .copy-btn {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      padding: 4px 10px;
-      font-size: 0.78rem;
-      border-radius: 6px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: rgba(255, 255, 255, 0.08);
-      color: #e6edf3;
-      cursor: pointer;
-    }
-    .copy-btn:hover { background: rgba(255, 255, 255, 0.16); }
-
     /* Journey */
     .journey {
       display: grid;
@@ -310,58 +175,10 @@
       color: var(--text-muted);
     }
 
-    /* Table */
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      font-size: 0.94rem;
+    #layers code,
+    #privacy code {
+      color: var(--accent);
     }
-
-    th, td {
-      padding: 14px 16px;
-      text-align: left;
-      border-bottom: 1px solid var(--border);
-    }
-
-    th {
-      background: var(--surface-alt);
-      font-weight: 600;
-    }
-
-    tr:last-child td { border-bottom: none; }
-
-    /* Footer */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 36px 0;
-      color: var(--text-muted);
-      font-size: 0.88rem;
-    }
-
-    .footer-inner {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .footer-links {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 18px;
-    }
-
-    /* YAML syntax highlighting */
-    .yk { color: #7ee787; }
-    .ys { color: #a5d6ff; }
-    .yn { color: #79c0ff; }
-    .yc { color: #8b949e; font-style: italic; }
-    .yp { color: #8b949e; }
 
     /* Side-by-side Windows Terminal comparison */
     .wt-header-row {
@@ -595,7 +412,7 @@
         <a href="#quickstart">Quick Start</a>
         <a href="#integrations" class="hide-sm">Integrations</a>
         <a href="#manifest" class="hide-sm">Manifest</a>
-        <a href="FEATURES.md">Docs</a>
+        <a href="features.html">Docs</a>
       </nav>
     </div>
   </header>
@@ -615,7 +432,7 @@
         </p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#quickstart">Get Started</a>
-          <a class="btn" href="FEATURES.md">Read Feature Guide</a>
+          <a class="btn" href="features.html">Read Feature Guide</a>
         </div>
 
         <div class="code-wrap">
@@ -874,9 +691,10 @@ agent      112     1  -bash
     <div class="container footer-inner">
       <div>&copy; 2026 lapel &middot; Licensed under Apache 2.0</div>
       <div class="footer-links">
-        <a href="FEATURES.md">Feature Guide</a>
-        <a href="COMMUNITY_DESIGN.md">Community Design</a>
-        <a href="E2E_TESTING.md">E2E Testing</a>
+        <a href="features.html">Feature Guide</a>
+        <a href="community-design.html">Community Design</a>
+        <a href="e2e-testing.html">E2E Testing</a>
+        <a href="wsl-dns-issue.html">WSL DNS Issue</a>
       </div>
     </div>
   </footer>

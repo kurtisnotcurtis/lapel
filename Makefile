@@ -10,7 +10,7 @@ DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 # Go build flags for version info
 LDFLAGS := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)"
 
-.PHONY: all build test clean run doctor
+.PHONY: all build test clean run doctor docs
 
 all: build
 
@@ -23,6 +23,10 @@ build:
 ## Run tests
 test:
 	go test ./...
+
+## Generate static HTML documentation from docs/*.md
+docs:
+	go run ./cmd/docsgen -docs-dir docs
 
 ## Clean build artifacts
 clean:

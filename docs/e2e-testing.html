@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>lapel E2E Testing Guide &middot; lapel</title>
+  <meta name="description" content="lapel documentation: lapel E2E Testing Guide" />
+  <link rel="icon" type="image/svg+xml" href="assets/lapel-logo.svg" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="index.html">
+        <svg viewBox="0 25 100 100" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M 46.5,116 C 34,102 21,84 9,65 L 21,60 L 9,55 L 14,39.5 C 30,31.5 70,32 86,40.5 L 91,56.5 L 79,61.5 L 91,66.5 C 79,85 65.5,102.5 52.5,116.8" />
+          <path d="M 46.5,116 C 41.5,95 39,79 37.2,65 C 36.2,57.2 37.5,50.5 42.5,47.5 C 38.8,47 35,46.2 31.5,45.2" />
+          <path d="M 52.5,116.8 C 57.5,95.5 60.5,80 62.3,66 C 63.3,58.2 61.8,51.5 56.8,48.5 C 60.5,48 64.3,47.2 67.8,46.2" />
+        </svg>
+        <span>lapel</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="index.html" class="hide-sm">Overview</a>
+        <a href="features.html">Features</a>
+        <a href="community-design.html">Community</a>
+        <a href="e2e-testing.html" class="active">E2E Testing</a>
+        <a href="wsl-dns-issue.html">WSL DNS</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container doc-shell">
+    <aside class="doc-sidebar" aria-label="Documentation navigation">
+      <div class="doc-sidebar-group">
+        <h2 class="doc-sidebar-title">Documentation</h2>
+        <ul class="doc-nav-list">
+          <li><a href="index.html">Home &amp; Quick Start</a></li>
+          <li><a href="features.html">Feature Guide</a></li>
+          <li><a href="community-design.html">Community Design</a></li>
+          <li><a href="e2e-testing.html" class="active">E2E Testing</a></li>
+          <li><a href="wsl-dns-issue.html">WSL DNS Issue</a></li>
+        </ul>
+      </div>
+      <div class="doc-sidebar-group">
+        <h2 class="doc-sidebar-title">On this page</h2>
+        <ul class="doc-toc-list">
+          <li class="toc-h2"><a href="#overview">Overview</a></li>
+          <li class="toc-h2"><a href="#running-e2e-tests">Running E2E Tests</a></li>
+          <li class="toc-h3"><a href="#quick-start">Quick Start</a></li>
+          <li class="toc-h3"><a href="#what-gets-tested">What Gets Tested</a></li>
+          <li class="toc-h2"><a href="#test-architecture">Test Architecture</a></li>
+          <li class="toc-h3"><a href="#throwaway-distro-strategy">Throwaway Distro Strategy</a></li>
+          <li class="toc-h3"><a href="#exec-path-vs-stdin">Exec Path vs Stdin</a></li>
+          <li class="toc-h2"><a href="#agent-detection-testing">Agent Detection Testing</a></li>
+          <li class="toc-h2"><a href="#inference-provider-testing">Inference Provider Testing</a></li>
+          <li class="toc-h3"><a href="#lm-studio-connectivity">LM Studio Connectivity</a></li>
+          <li class="toc-h3"><a href="#ollama-connectivity">Ollama Connectivity</a></li>
+          <li class="toc-h2"><a href="#extending-tests">Extending Tests</a></li>
+          <li class="toc-h3"><a href="#adding-new-agent-types">Adding New Agent Types</a></li>
+          <li class="toc-h3"><a href="#adding-new-inference-providers">Adding New Inference Providers</a></li>
+          <li class="toc-h2"><a href="#opinionated-agent-config-for-lm-studio">Opinionated Agent Config for LM Studio</a></li>
+          <li class="toc-h3"><a href="#host-to-wsl-network-topology">Host-to-WSL Network Topology</a></li>
+          <li class="toc-h3"><a href="#key-configuration-points">Key Configuration Points</a></li>
+          <li class="toc-h3"><a href="#testing-from-inside-wsl">Testing from Inside WSL</a></li>
+          <li class="toc-h3"><a href="#automated-reachability-check">Automated Reachability Check</a></li>
+          <li class="toc-h2"><a href="#troubleshooting">Troubleshooting</a></li>
+          <li class="toc-h3"><a href="#common-issues">Common Issues</a></li>
+          <li class="toc-h3"><a href="#debugging-tips">Debugging Tips</a></li>
+          <li class="toc-h2"><a href="#future-enhancements">Future Enhancements</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <article class="doc-article">
+      <div class="doc-breadcrumb">
+        <a href="index.html">&larr; Back to lapel overview</a>
+        <a class="doc-source-link" href="E2E_TESTING.md">View raw E2E_TESTING.md</a>
+      </div>
+      <h1 id="lapel-e2e-testing-guide">lapel E2E Testing Guide</h1>
+<h2 id="overview">Overview <a class="heading-anchor" href="#overview" aria-label="Link to Overview">#</a></h2>
+<p>The <code>lapel</code> project includes comprehensive end-to-end tests that verify the full provisioning and agent inference stack. These tests run against real WSL distributions and test everything from distro creation to Go compilation inside WSL.</p>
+<h2 id="running-e2e-tests">Running E2E Tests <a class="heading-anchor" href="#running-e2e-tests" aria-label="Link to Running E2E Tests">#</a></h2>
+<h3 id="quick-start">Quick Start <a class="heading-anchor" href="#quick-start" aria-label="Link to Quick Start">#</a></h3>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash"># Run the full e2e test suite (downloads Ubuntu 24.04 rootfs, creates throwaway distro)
+TB_E2E=1 go test -run TestE2EFreshImportAndSetup -v -timeout 45m ./internal/backend/wsl/
+
+# Keep the throwaway distro for post-mortem inspection
+TB_E2E=1 TB_E2E_KEEP=1 go test -run TestE2EFreshImportAndSetup -v -timeout 45m ./internal/backend/wsl/</code></pre></div>
+<h3 id="what-gets-tested">What Gets Tested <a class="heading-anchor" href="#what-gets-tested" aria-label="Link to What Gets Tested">#</a></h3>
+<p>The e2e test exercises <strong>14 verification steps</strong>:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Category</th><th>What&#39;s Verified</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Distro Creation</td><td><code>wsl.exe</code> lists the new distro after provisioning</td></tr>
+<tr><td>2</td><td>Default User</td><td>Non-root user is set correctly (<code>whoami</code> returns expected user)</td></tr>
+<tr><td>3</td><td>Passwordless Sudo</td><td><code>sudo true</code> works without interaction (critical for automation)</td></tr>
+<tr><td>4</td><td>wsl.conf Durability</td><td><code>/etc/wsl.conf</code> pins default user and enables systemd</td></tr>
+<tr><td>5</td><td>Agent Toolkit Packages</td><td>Core packages installed: openssh-server, ripgrep, git-filter-repo, tmux</td></tr>
+<tr><td>5b</td><td>Command Substitution</td><td><code>$(...)</code> survives WSL exec path (regression test for WSL 3.0.3.0)</td></tr>
+<tr><td>6</td><td>Full Reboot</td><td>Non-root user persists after <code>wsl --shutdown</code> and restart</td></tr>
+<tr><td>7</td><td>Agent Detection</td><td>Agents detectable inside distro: pi, copilot, claude</td></tr>
+<tr><td>8</td><td>Inference Providers</td><td>LM Studio / Ollama reachability from WSL to Windows host</td></tr>
+<tr><td>9</td><td>Go Runtime</td><td><code>go version</code> works (we install golang-go)</td></tr>
+<tr><td>10</td><td>Python/uv</td><td><code>uv --version</code> and python3 availability</td></tr>
+<tr><td>11</td><td>Node/fnm</td><td><code>node --version</code> and fnm installed</td></tr>
+<tr><td>12</td><td>Go Compilation</td><td>Compile and run a simple Go program inside WSL</td></tr>
+<tr><td>13</td><td>SSH Connectivity</td><td>Windows → WSL SSH works (if passwordless sudo configured)</td></tr>
+<tr><td>14</td><td>Summary Report</td><td>Aggregate stats: agents detected, providers running</td></tr>
+</tbody></table></div>
+<h2 id="test-architecture">Test Architecture <a class="heading-anchor" href="#test-architecture" aria-label="Link to Test Architecture">#</a></h2>
+<h3 id="throwaway-distro-strategy">Throwaway Distro Strategy <a class="heading-anchor" href="#throwaway-distro-strategy" aria-label="Link to Throwaway Distro Strategy">#</a></h3>
+<p>Tests create a fresh distro (<code>tb-e2e-&lt;timestamp&gt;</code>) and unregister it at the end. This ensures:</p>
+<ul>
+<li><strong>Clean state</strong> — no leftover packages or config from previous runs</li>
+<li><strong>Real WSL behavior</strong> — tests against actual <code>wsl.exe</code>, not mocks</li>
+<li><strong>Fast cleanup</strong> — <code>wsl --unregister</code> removes everything</li>
+</ul>
+<h3 id="exec-path-vs-stdin">Exec Path vs Stdin <a class="heading-anchor" href="#exec-path-vs-stdin" aria-label="Link to Exec Path vs Stdin">#</a></h3>
+<p>The test validates both execution modes:</p>
+<ul>
+<li><strong><code>runWslWith()</code></strong> — passes commands via <code>-c &#34;...&#34;</code> (argv path)</li>
+<li><strong>Stdin heredoc</strong> — for commands with complex quoting or <code>$(...)</code> substitution</li>
+</ul>
+<p>This is critical because WSL 3.0.3.0 mangles command substitutions in argv.</p>
+<h2 id="agent-detection-testing">Agent Detection Testing <a class="heading-anchor" href="#agent-detection-testing" aria-label="Link to Agent Detection Testing">#</a></h2>
+<p>The test verifies that agents can be detected inside the provisioned distro:</p>
+<div class="code-wrap"><span class="code-lang">go</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-go">agentMgr := agent.NewManager()
+agents, err := agentMgr.DetectAll(ctx)
+// Expected output:
+//   pi: ✓ available (version: 1.26.0)
+//   copilot: ✗ not found
+//   claude: ✗ not found</code></pre></div>
+<p><strong>Note:</strong> Agent binaries (<code>pi</code>, <code>github-copilot-cli</code>, <code>claude</code>) are detected <strong>inside the WSL distribution</strong> via <code>wsl.exe -d &lt;distro&gt; bash -lc &#34;command -v &lt;binary&gt;&#34;</code> (falling back to host <code>exec.LookPath</code> only when running natively on Linux).</p>
+<h2 id="inference-provider-testing">Inference Provider Testing <a class="heading-anchor" href="#inference-provider-testing" aria-label="Link to Inference Provider Testing">#</a></h2>
+<p>The test checks if inference providers are reachable from WSL:</p>
+<div class="code-wrap"><span class="code-lang">go</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-go">reg := provider.NewRegistry(name) // use our throwaway distro
+statuses, err := reg.StatusAll(ctx)
+// Expected output:
+//   lm-studio: installed=yes running=yes port=1234
+//     models: 3 loaded
+//   ollama: installed=no running=no port=0</code></pre></div>
+<h3 id="lm-studio-connectivity">LM Studio Connectivity <a class="heading-anchor" href="#lm-studio-connectivity" aria-label="Link to LM Studio Connectivity">#</a></h3>
+<p>LM Studio runs on Windows host, agent runs in WSL. The test verifies:</p>
+<ul>
+<li>Port reachability (default 1234)</li>
+<li>Model listing via API</li>
+<li>Network path from WSL to Windows (NAT gateway IP)</li>
+</ul>
+<h3 id="ollama-connectivity">Ollama Connectivity <a class="heading-anchor" href="#ollama-connectivity" aria-label="Link to Ollama Connectivity">#</a></h3>
+<p>Ollama can run as a background service or CLI. The test checks both modes.</p>
+<h2 id="extending-tests">Extending Tests <a class="heading-anchor" href="#extending-tests" aria-label="Link to Extending Tests">#</a></h2>
+<h3 id="adding-new-agent-types">Adding New Agent Types <a class="heading-anchor" href="#adding-new-agent-types" aria-label="Link to Adding New Agent Types">#</a></h3>
+<p>To add an agent to the detection suite:</p>
+<ol>
+<li>Implement <code>agent.Agent</code> interface in <code>internal/agent/&lt;name&gt;.go</code></li>
+<li>Register it in <code>agent.NewManager()</code></li>
+<li>Update this documentation</li>
+</ol>
+<h3 id="adding-new-inference-providers">Adding New Inference Providers <a class="heading-anchor" href="#adding-new-inference-providers" aria-label="Link to Adding New Inference Providers">#</a></h3>
+<p>To add a provider:</p>
+<ol>
+<li>Implement <code>provider.Manager</code> interface in <code>internal/provider/&lt;name&gt;.go</code></li>
+<li>Register it in <code>provider.NewRegistry()</code></li>
+<li>Add reachability checks to the e2e test</li>
+</ol>
+<h2 id="opinionated-agent-config-for-lm-studio">Opinionated Agent Config for LM Studio <a class="heading-anchor" href="#opinionated-agent-config-for-lm-studio" aria-label="Link to Opinionated Agent Config for LM Studio">#</a></h2>
+<h3 id="host-to-wsl-network-topology">Host-to-WSL Network Topology <a class="heading-anchor" href="#host-to-wsl-network-topology" aria-label="Link to Host-to-WSL Network Topology">#</a></h3>
+<div class="code-wrap"><button class="copy-btn" type="button">Copy</button><pre><code>┌─────────────────────────────────────┐
+│         Windows 11 Host             │
+│                                     │
+│  ┌──────────┐    ┌───────────────┐  │
+│  │LM Studio │    │   lapel.exe   │  │
+│  │ :1234     │◄──►│   (WSL)       │  │
+│  └──────────┘    └───────────────┘  │
+│              ▲                      │
+│              │ NAT gateway           │
+│         ┌─────────────┐            │
+│         │  WSL2 VM    │            │
+│         │  (Ubuntu)   │            │
+│         └─────────────┘            │
+└─────────────────────────────────────┘</code></pre></div>
+<h3 id="key-configuration-points">Key Configuration Points <a class="heading-anchor" href="#key-configuration-points" aria-label="Link to Key Configuration Points">#</a></h3>
+<ol>
+<li><strong>LM Studio listens on <code>0.0.0.0:1234</code></strong> — not just localhost, so WSL can reach it</li>
+<li><strong>WSL uses NAT gateway IP</strong> — typically <code>172.x.x.x</code> or <code>192.168.x.x</code> (changes between reboots)</li>
+<li><strong><code>/etc/resolv.conf</code> lies</strong> — nameserver points to Windows, not the actual gateway</li>
+</ol>
+<h3 id="testing-from-inside-wsl">Testing from Inside WSL <a class="heading-anchor" href="#testing-from-inside-wsl" aria-label="Link to Testing from Inside WSL">#</a></h3>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash"># Find the NAT gateway IP
+ip route | grep default
+
+# Test LM Studio reachability
+curl -s http://&lt;gateway-ip&gt;:1234/v1/models
+
+# Or use the Windows host DNS name (works in most cases)
+curl -s http://host.docker.internal:1234/v1/models</code></pre></div>
+<h3 id="automated-reachability-check">Automated Reachability Check <a class="heading-anchor" href="#automated-reachability-check" aria-label="Link to Automated Reachability Check">#</a></h3>
+<p>The <code>provider.LMStudio.Status()</code> method handles this automatically:</p>
+<div class="code-wrap"><span class="code-lang">go</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-go">reg := provider.NewRegistry(&#34;Ubuntu-Lean&#34;)
+status, err := reg.FindByName(&#34;lm-studio&#34;).Status(ctx)
+if err != nil {
+    // Handle network issues, wrong port, etc.
+}
+fmt.Printf(&#34;LM Studio reachable at %s:%d\n&#34;, status.BindAddr, status.Port)</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting <a class="heading-anchor" href="#troubleshooting" aria-label="Link to Troubleshooting">#</a></h2>
+<h3 id="common-issues">Common Issues <a class="heading-anchor" href="#common-issues" aria-label="Link to Common Issues">#</a></h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Issue</th><th>Symptom</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>WSL version mismatch</td><td><code>wsl --version</code> not found</td><td>Update WSL: <code>winget install Microsoft.WSL</code></td></tr>
+<tr><td>NAT gateway IP changed</td><td>LM Studio unreachable after reboot</td><td>Use <code>host.docker.internal</code> or query <code>/etc/resolv.conf</code></td></tr>
+<tr><td>LM Studio not listening on all interfaces</td><td>Only accessible from Windows, not WSL</td><td>Set <code>--listen 0.0.0.0</code> in LM Studio settings</td></tr>
+<tr><td>Passwordless sudo missing</td><td>SSH tests fail</td><td>Run <code>sudo visudo</code> and add user to sudoers with NOPASSWD</td></tr>
+</tbody></table></div>
+<h3 id="debugging-tips">Debugging Tips <a class="heading-anchor" href="#debugging-tips" aria-label="Link to Debugging Tips">#</a></h3>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash"># Inspect the throwaway distro after test (TB_E2E_KEEP=1)
+wsl -d tb-e2e-&lt;timestamp&gt; -- bash
+
+# Check what packages were installed
+dpkg -l | grep -E &#34;ripgrep|git-filter-repo|tmux&#34;
+
+# Verify agent binaries inside the WSL distro
+wsl -d Ubuntu-Lean -- bash -lc &#34;command -v pi || command -v claude || command -v github-copilot-cli&#34;
+
+# Test LM Studio from WSL manually
+curl -s http://host.docker.internal:1234/v1/models | jq .</code></pre></div>
+<h2 id="future-enhancements">Future Enhancements <a class="heading-anchor" href="#future-enhancements" aria-label="Link to Future Enhancements">#</a></h2>
+<ul>
+<li class="task-item"><input type="checkbox" disabled /><span>Add <code>lapel doctor</code> command that runs the e2e checks interactively</span></li>
+<li class="task-item"><input type="checkbox" disabled /><span>Support for multiple inference providers simultaneously</span></li>
+<li class="task-item"><input type="checkbox" disabled /><span>Test agent launch with actual model inference (slow, optional)</span></li>
+<li class="task-item"><input type="checkbox" disabled /><span>Validate jail policies (filesystem scoping, network restrictions)</span></li>
+<li class="task-item"><input type="checkbox" disabled /><span>Performance benchmarks: distro boot time, package install time</span></li>
+</ul>
+
+    </article>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>&copy; 2026 lapel &middot; Licensed under Apache 2.0</div>
+      <div class="footer-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Feature Guide</a>
+        <a href="community-design.html">Community Design</a>
+        <a href="e2e-testing.html">E2E Testing</a>
+        <a href="wsl-dns-issue.html">WSL DNS Issue</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll(".copy-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const wrap = btn.closest(".code-wrap");
+        const code = wrap ? wrap.querySelector("code") : null;
+        const text = code ? code.innerText : "";
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.textContent;
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        } catch (_) {}
+      });
+    });
+  </script>
+</body>
+</html>

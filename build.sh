@@ -21,6 +21,7 @@ usage() {
     echo "  test        Run tests"
     echo "  clean       Remove build artifacts"
     echo "  doctor      Build and run doctor command"
+    echo "  docs        Generate static HTML docs from docs/*.md"
     echo "  run         Build and run CLI (pass args after --)"
     echo ""
     exit 1
@@ -48,6 +49,10 @@ doctor() {
     "./${BUILD_DIR}/${BINARY}" doctor
 }
 
+docs() {
+    go run ./cmd/docsgen -docs-dir docs
+}
+
 run() {
     build
     "./${BUILD_DIR}/${BINARY}" "$@"
@@ -66,6 +71,9 @@ case "${1:-build}" in
         ;;
     doctor)
         doctor
+        ;;
+    docs)
+        docs
         ;;
     run)
         shift

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WSL DNS Resolution Issue &middot; lapel</title>
+  <meta name="description" content="lapel documentation: WSL DNS Resolution Issue" />
+  <link rel="icon" type="image/svg+xml" href="assets/lapel-logo.svg" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="index.html">
+        <svg viewBox="0 25 100 100" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M 46.5,116 C 34,102 21,84 9,65 L 21,60 L 9,55 L 14,39.5 C 30,31.5 70,32 86,40.5 L 91,56.5 L 79,61.5 L 91,66.5 C 79,85 65.5,102.5 52.5,116.8" />
+          <path d="M 46.5,116 C 41.5,95 39,79 37.2,65 C 36.2,57.2 37.5,50.5 42.5,47.5 C 38.8,47 35,46.2 31.5,45.2" />
+          <path d="M 52.5,116.8 C 57.5,95.5 60.5,80 62.3,66 C 63.3,58.2 61.8,51.5 56.8,48.5 C 60.5,48 64.3,47.2 67.8,46.2" />
+        </svg>
+        <span>lapel</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="index.html" class="hide-sm">Overview</a>
+        <a href="features.html">Features</a>
+        <a href="community-design.html">Community</a>
+        <a href="e2e-testing.html">E2E Testing</a>
+        <a href="wsl-dns-issue.html" class="active">WSL DNS</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container doc-shell">
+    <aside class="doc-sidebar" aria-label="Documentation navigation">
+      <div class="doc-sidebar-group">
+        <h2 class="doc-sidebar-title">Documentation</h2>
+        <ul class="doc-nav-list">
+          <li><a href="index.html">Home &amp; Quick Start</a></li>
+          <li><a href="features.html">Feature Guide</a></li>
+          <li><a href="community-design.html">Community Design</a></li>
+          <li><a href="e2e-testing.html">E2E Testing</a></li>
+          <li><a href="wsl-dns-issue.html" class="active">WSL DNS Issue</a></li>
+        </ul>
+      </div>
+      <div class="doc-sidebar-group">
+        <h2 class="doc-sidebar-title">On this page</h2>
+        <ul class="doc-toc-list">
+          <li class="toc-h2"><a href="#problem">Problem</a></li>
+          <li class="toc-h3"><a href="#symptoms">Symptoms</a></li>
+          <li class="toc-h3"><a href="#why-it-happens">Why It Happens</a></li>
+          <li class="toc-h2"><a href="#mitigation-strategies">Mitigation Strategies</a></li>
+          <li class="toc-h3"><a href="#1-retry-with-exponential-backoff-implemented">1. Retry with Exponential Backoff (Implemented)</a></li>
+          <li class="toc-h3"><a href="#2-force-google-public-dns-in-wsl-implemented">2. Force Google Public DNS in WSL (Implemented)</a></li>
+          <li class="toc-h3"><a href="#3-ip-address-fallback-workaround">3. IP Address Fallback (Workaround)</a></li>
+          <li class="toc-h3"><a href="#4-force-go-to-use-wsl-dns-experimental">4. Force Go to Use WSL DNS (Experimental)</a></li>
+          <li class="toc-h2"><a href="#verification">Verification</a></li>
+          <li class="toc-h3"><a href="#check-wsl-dns-configuration">Check WSL DNS Configuration</a></li>
+          <li class="toc-h3"><a href="#test-dns-resolution-from-wsl">Test DNS Resolution from WSL</a></li>
+          <li class="toc-h3"><a href="#test-dns-resolution-from-go-windows">Test DNS Resolution from Go (Windows)</a></li>
+          <li class="toc-h2"><a href="#related-files">Related Files</a></li>
+          <li class="toc-h2"><a href="#references">References</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <article class="doc-article">
+      <div class="doc-breadcrumb">
+        <a href="index.html">&larr; Back to lapel overview</a>
+        <a class="doc-source-link" href="WSL_DNS_ISSUE.md">View raw WSL_DNS_ISSUE.md</a>
+      </div>
+      <h1 id="wsl-dns-resolution-issue">WSL DNS Resolution Issue</h1>
+<h2 id="problem">Problem <a class="heading-anchor" href="#problem" aria-label="Link to Problem">#</a></h2>
+<p>Go&#39;s HTTP client uses Windows&#39; DNS resolver (<code>getaddrinfow</code>), which can fail to resolve certain domains like <code>cloud-images.ubuntu.com</code>, even when bash/nslookup inside WSL works fine using WSL&#39;s internal DNS resolver (NAT gateway <code>10.255.255.254</code>).</p>
+<h3 id="symptoms">Symptoms <a class="heading-anchor" href="#symptoms" aria-label="Link to Symptoms">#</a></h3>
+<div class="code-wrap"><button class="copy-btn" type="button">Copy</button><pre><code>Get &#34;https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64-root.tar.xz&#34;: 
+dial tcp: lookup cloud-images.ubuntu.com: getaddrinfow: This is usually a temporary error during hostname resolution and means that the local server did not receive a response from an authoritative server.</code></pre></div>
+<h3 id="why-it-happens">Why It Happens <a class="heading-anchor" href="#why-it-happens" aria-label="Link to Why It Happens">#</a></h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Resolver</th><th>Source</th><th>Behavior</th></tr></thead>
+<tbody>
+<tr><td><strong>Windows DNS</strong> (Go uses this)</td><td><code>getaddrinfow</code> API</td><td>Can fail for certain domains, especially during high load or ISP DNS issues</td></tr>
+<tr><td><strong>WSL Internal DNS</strong></td><td><code>/etc/resolv.conf</code> → NAT gateway <code>10.255.255.254</code></td><td>Usually works but can be flaky for some domains</td></tr>
+</tbody></table></div>
+<h2 id="mitigation-strategies">Mitigation Strategies <a class="heading-anchor" href="#mitigation-strategies" aria-label="Link to Mitigation Strategies">#</a></h2>
+<h3 id="1-retry-with-exponential-backoff-implemented">1. Retry with Exponential Backoff (Implemented) <a class="heading-anchor" href="#1-retry-with-exponential-backoff-implemented" aria-label="Link to 1. Retry with Exponential Backoff (Implemented)">#</a></h3>
+<p>The <code>downloadRootfs()</code> function now retries up to 3 times with exponential backoff:</p>
+<ul>
+<li>Attempt 1: Immediate</li>
+<li>Attempt 2: After 1s delay</li>
+<li>Attempt 3: After 2s delay</li>
+</ul>
+<p>This handles transient DNS failures during e2e tests.</p>
+<h3 id="2-force-google-public-dns-in-wsl-implemented">2. Force Google Public DNS in WSL (Implemented) <a class="heading-anchor" href="#2-force-google-public-dns-in-wsl-implemented" aria-label="Link to 2. Force Google Public DNS in WSL (Implemented)">#</a></h3>
+<p>The provisioning flow now writes <code>/etc/wsl.conf</code> with:</p>
+<div class="code-wrap"><span class="code-lang">ini</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-ini">[network]
+generateResolvConf = false</code></pre></div>
+<p>And manually sets <code>/etc/resolv.conf</code>:</p>
+<div class="code-wrap"><span class="code-lang">conf</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-conf">nameserver 8.8.8.8
+nameserver 8.8.4.4</code></pre></div>
+<p>This ensures WSL uses Google&#39;s reliable DNS servers for internal operations (apt, curl, etc.).</p>
+<h3 id="3-ip-address-fallback-workaround">3. IP Address Fallback (Workaround) <a class="heading-anchor" href="#3-ip-address-fallback-workaround" aria-label="Link to 3. IP Address Fallback (Workaround)">#</a></h3>
+<p>When DNS consistently fails, use the known IP address directly:</p>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash"># cloud-images.ubuntu.com resolves to:
+185.125.190.37
+185.125.190.40</code></pre></div>
+<p>Example in e2e test URL override:</p>
+<div class="code-wrap"><span class="code-lang">go</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-go">url = &#34;https://185.125.190.37/noble/current/noble-server-cloudimg-amd64-root.tar.xz&#34;</code></pre></div>
+<h3 id="4-force-go-to-use-wsl-dns-experimental">4. Force Go to Use WSL DNS (Experimental) <a class="heading-anchor" href="#4-force-go-to-use-wsl-dns-experimental" aria-label="Link to 4. Force Go to Use WSL DNS (Experimental)">#</a></h3>
+<p>Set environment variable before running tests:</p>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">GODEBUG=netdns=cgo go test ./internal/backend/wsl/</code></pre></div>
+<p>This forces Go to use the C library&#39;s <code>getaddrinfo()</code> instead of Windows&#39; native API, which may resolve differently.</p>
+<h2 id="verification">Verification <a class="heading-anchor" href="#verification" aria-label="Link to Verification">#</a></h2>
+<h3 id="check-wsl-dns-configuration">Check WSL DNS Configuration <a class="heading-anchor" href="#check-wsl-dns-configuration" aria-label="Link to Check WSL DNS Configuration">#</a></h3>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">wsl -d Ubuntu-Lean -- cat /etc/resolv.conf
+# Should show: nameserver 8.8.8.8 (or your chosen DNS)
+
+wsl -d Ubuntu-Lean -- cat /etc/wsl.conf | grep -A 3 network
+# Should show: generateResolvConf = false</code></pre></div>
+<h3 id="test-dns-resolution-from-wsl">Test DNS Resolution from WSL <a class="heading-anchor" href="#test-dns-resolution-from-wsl" aria-label="Link to Test DNS Resolution from WSL">#</a></h3>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">wsl -d Ubuntu-Lean -- nslookup cloud-images.ubuntu.com
+# Should resolve to 185.125.190.37 or similar</code></pre></div>
+<h3 id="test-dns-resolution-from-go-windows">Test DNS Resolution from Go (Windows) <a class="heading-anchor" href="#test-dns-resolution-from-go-windows" aria-label="Link to Test DNS Resolution from Go (Windows)">#</a></h3>
+<p>Run e2e test and observe retry messages:</p>
+<div class="code-wrap"><button class="copy-btn" type="button">Copy</button><pre><code>[retry] rootfs download attempt 2/3, waiting 1s
+[retry] rootfs download attempt 3/3, waiting 2s</code></pre></div>
+<p>If all retries fail consistently, use IP address fallback.</p>
+<h2 id="related-files">Related Files <a class="heading-anchor" href="#related-files" aria-label="Link to Related Files">#</a></h2>
+<ul>
+<li><code>internal/backend/wsl/provision.go</code> - <code>downloadRootfs()</code> with retry logic</li>
+<li><code>internal/backend/wsl/provision.go</code> - <code>setupFreshDistro()</code> writes <code>/etc/wsl.conf</code> and <code>/etc/resolv.conf</code></li>
+<li><code>docs/E2E_TESTING.md</code> - E2E test documentation</li>
+</ul>
+<h2 id="references">References <a class="heading-anchor" href="#references" aria-label="Link to References">#</a></h2>
+<ul>
+<li><a href="https://github.com/microsoft/WSL/issues/4580">WSL DNS Resolution Issues</a></li>
+<li><a href="https://pkg.go.dev/net#hdr-Name_Resolution">Go net package DNS resolution</a></li>
+<li><a href="https://cloud-images.ubuntu.com/">Ubuntu Cloud Images</a></li>
+</ul>
+
+    </article>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>&copy; 2026 lapel &middot; Licensed under Apache 2.0</div>
+      <div class="footer-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Feature Guide</a>
+        <a href="community-design.html">Community Design</a>
+        <a href="e2e-testing.html">E2E Testing</a>
+        <a href="wsl-dns-issue.html">WSL DNS Issue</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll(".copy-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const wrap = btn.closest(".code-wrap");
+        const code = wrap ? wrap.querySelector("code") : null;
+        const text = code ? code.innerText : "";
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.textContent;
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        } catch (_) {}
+      });
+    });
+  </script>
+</body>
+</html>

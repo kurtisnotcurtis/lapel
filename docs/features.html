@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>lapel features &middot; lapel</title>
+  <meta name="description" content="lapel documentation: lapel features" />
+  <link rel="icon" type="image/svg+xml" href="assets/lapel-logo.svg" />
+  <link rel="stylesheet" href="assets/site.css" />
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <a class="brand" href="index.html">
+        <svg viewBox="0 25 100 100" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M 46.5,116 C 34,102 21,84 9,65 L 21,60 L 9,55 L 14,39.5 C 30,31.5 70,32 86,40.5 L 91,56.5 L 79,61.5 L 91,66.5 C 79,85 65.5,102.5 52.5,116.8" />
+          <path d="M 46.5,116 C 41.5,95 39,79 37.2,65 C 36.2,57.2 37.5,50.5 42.5,47.5 C 38.8,47 35,46.2 31.5,45.2" />
+          <path d="M 52.5,116.8 C 57.5,95.5 60.5,80 62.3,66 C 63.3,58.2 61.8,51.5 56.8,48.5 C 60.5,48 64.3,47.2 67.8,46.2" />
+        </svg>
+        <span>lapel</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="index.html" class="hide-sm">Overview</a>
+        <a href="features.html" class="active">Features</a>
+        <a href="community-design.html">Community</a>
+        <a href="e2e-testing.html">E2E Testing</a>
+        <a href="wsl-dns-issue.html">WSL DNS</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container doc-shell">
+    <aside class="doc-sidebar" aria-label="Documentation navigation">
+      <div class="doc-sidebar-group">
+        <h2 class="doc-sidebar-title">Documentation</h2>
+        <ul class="doc-nav-list">
+          <li><a href="index.html">Home &amp; Quick Start</a></li>
+          <li><a href="features.html" class="active">Feature Guide</a></li>
+          <li><a href="community-design.html">Community Design</a></li>
+          <li><a href="e2e-testing.html">E2E Testing</a></li>
+          <li><a href="wsl-dns-issue.html">WSL DNS Issue</a></li>
+        </ul>
+      </div>
+      <div class="doc-sidebar-group">
+        <h2 class="doc-sidebar-title">On this page</h2>
+        <ul class="doc-toc-list">
+          <li class="toc-h2"><a href="#overview">Overview</a></li>
+          <li class="toc-h3"><a href="#1-provider-reachability">1. Provider reachability 🥇</a></li>
+          <li class="toc-h3"><a href="#2-lean-environment-lapel-wsl-distro">2. Lean environment (lapel WSL distro) 🥈</a></li>
+          <li class="toc-h3"><a href="#3-agent-sandboxing-honest-reporting">3. Agent sandboxing &amp; honest reporting 🥉</a></li>
+          <li class="toc-h3"><a href="#4-hardware-aware-tuning-agentide-config-sync">4. Hardware-aware tuning &amp; agent/IDE config sync ⚡</a></li>
+          <li class="toc-h2"><a href="#core-user-journey">Core user journey</a></li>
+          <li class="toc-h2"><a href="#declarative-configuration-init-plan-apply-status">Declarative configuration (init / plan / apply / status)</a></li>
+          <li class="toc-h3"><a href="#manifest-schema-lapelyaml">Manifest schema (lapel.yaml)</a></li>
+          <li class="toc-h2"><a href="#architecture-overview">Architecture overview</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <article class="doc-article">
+      <div class="doc-breadcrumb">
+        <a href="index.html">&larr; Back to lapel overview</a>
+        <a class="doc-source-link" href="FEATURES.md">View raw FEATURES.md</a>
+      </div>
+      <h1 id="lapel-features">lapel features</h1>
+<h2 id="overview">Overview <a class="heading-anchor" href="#overview" aria-label="Link to Overview">#</a></h2>
+<p><code>lapel</code> bridges Windows GPU inference providers (LM Studio, Ollama) with coding agents running in WSL2 and VS Code across four pillars:</p>
+<ol>
+<li><strong>Provider reachability</strong> — Verify and route WSL-to-Windows inference connections reliably.</li>
+<li><strong>Lean WSL2 environment</strong> — Provision a minimal <code>lapel</code> distro so your RAM goes to your model&#39;s KV cache, not background desktop services.</li>
+<li><strong>Agent sandboxing</strong> — Scope filesystem access, strip host <code>PATH</code> leakage, and report enforcement status honestly.</li>
+<li><strong>Hardware-aware config sync &amp; tuning</strong> — Detect GPU/VRAM specs, recommend model tiers and context windows, and sync configurations across CLI agents and IDE plugins.</li>
+</ol>
+<hr />
+<h3 id="1-provider-reachability">1. Provider reachability 🥇 <a class="heading-anchor" href="#1-provider-reachability" aria-label="Link to 1. Provider reachability 🥇">#</a></h3>
+<p>Your inference server (LM Studio, Ollama) lives on Windows. Your CLI agent lives in WSL. <code>lapel</code> verifies the connection from the <em>Linux side</em>, where it actually matters.</p>
+<ul>
+<li><strong>Provider detection</strong>: Identifies installed providers on your Windows host</li>
+<li><strong>Runtime status</strong>: Shows running state, port, bind address, and loaded models</li>
+<li><strong>NAT gateway discovery</strong>: Resolves the real Windows host IP from <code>/proc/net/route</code> (not the unreliable WSL <code>resolv.conf</code>)</li>
+<li><strong>Connectivity verification</strong>: Probes endpoints from inside WSL and classifies errors (connection-refused vs. timeout vs. HTTP error)</li>
+<li><strong>Model listing</strong>: Queries available models via provider APIs</li>
+</ul>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel doctor                        # verify prerequisites, hardware &amp; reachability
+lapel provider detect               # find installed providers on Windows host
+lapel provider status               # runtime state and loaded models for all providers
+lapel provider reachability         # probe Windows host endpoint from inside WSL
+lapel provider model-list --provider lm-studio</code></pre></div>
+<p><strong>Supported providers:</strong></p>
+<div class="table-wrap"><table>
+<thead><tr><th>Provider</th><th>Detection method</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>LM Studio</strong></td><td><code>lms</code> CLI + HTTP probe (<code>:1234</code>)</td><td>Preferred; GUI + CLI (<code>lms server start/stop/status</code>)</td></tr>
+<tr><td><strong>Ollama</strong></td><td>HTTP API on <code>:11434</code></td><td>Lightweight background service</td></tr>
+</tbody></table></div>
+<hr />
+<h3 id="2-lean-environment-lapel-wsl-distro">2. Lean environment (<code>lapel</code> WSL distro) 🥈 <a class="heading-anchor" href="#2-lean-environment-lapel-wsl-distro" aria-label="Link to 2. Lean environment (lapel WSL distro) 🥈">#</a></h3>
+<p>Stock Ubuntu from the Microsoft Store is a general-purpose OS living inside Windows — systemd services, background daemons, full <code>PATH</code> with <code>/mnt/c</code>, and GUI apps. When your inference server is also running on the same machine, every MB of RAM and percent of CPU that WSL wastes is taken directly from your model.</p>
+<p>A purpose-built minimal distro is a feature, not a limitation:</p>
+<ul>
+<li><strong>Automatic provisioning</strong>: Imports a fresh Ubuntu/Debian rootfs into <code>%LOCALAPPDATA%\lapel\distros\lapel</code> with checksum verification</li>
+<li><strong>Idempotent package management</strong>: Installs only what coding agents need (<code>git</code>, <code>curl</code>, <code>tmux</code>, <code>ripgrep</code>, <code>sshd</code>, <code>procps</code>, <code>iproute2</code>, etc.)</li>
+<li><strong>SSH ready</strong>: Configures key-based authentication automatically</li>
+<li><strong>PATH filtering</strong>: Strips <code>/mnt/c</code> and <code>/mnt/d</code> from <code>PATH</code> to prevent Windows host tool leakage</li>
+<li><strong>Distinctive shell &amp; Windows Terminal styling</strong>: Applies a branded shell prompt (<code>⚡ lapel [jail]</code>), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, icon, and color scheme without modifying your user <code>settings.json</code>)</li>
+<li><strong>Resource-conscious by design</strong>: No GUI apps (<code>guiApplications=false</code>), minimal background services, <code>.wslconfig</code> cap inspection (<code>lapel config</code>)</li>
+</ul>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel env status                  # inspect registered distro runtime state
+lapel env style --preset=amber    # switch WSL prompt &amp; Windows Terminal theme preset
+lapel config                      # inspect host .wslconfig memory/CPU caps and networking warnings
+lapel provision                   # build the agent-optimized lapel WSL baseline (idempotent)</code></pre></div>
+<hr />
+<h3 id="3-agent-sandboxing-honest-reporting">3. Agent sandboxing &amp; honest reporting 🥉 <a class="heading-anchor" href="#3-agent-sandboxing-honest-reporting" aria-label="Link to 3. Agent sandboxing &amp; honest reporting 🥉">#</a></h3>
+<p>Filesystem scoping, network rules, and process timeouts so your coding agent can work in your project workspace without risking your Windows system files.</p>
+<ul>
+<li><strong>Filesystem scoping</strong>: Configure <code>read-write</code>, <code>read-only</code>, or <code>deny</code> access to paths</li>
+<li><strong>Workspace import modes</strong>: Live <code>bind</code> mounts for rapid development or isolated <code>copy</code> (<code>rsync</code>) snapshots</li>
+<li><strong>Process lifecycle &amp; timeouts</strong>: Runs sessions in dedicated process groups (<code>setsid</code>) with verified guest-side teardown (<code>lapel session smoke</code>) so no orphaned processes survive</li>
+<li><strong>Honest enforcement reporting</strong>: Explicitly distinguishes <code>enforced</code> vs. <code>requested</code> vs. <code>unsupported</code> vs. <code>needs-config</code> controls (<code>lapel jail-controls</code>) — never silently ignored or overclaimed</li>
+</ul>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel apply               # persist desired baseline &amp; import workspace
+lapel status              # check live state and drift against baseline
+lapel session smoke       # verify session launch, teardown, and zero orphaned processes</code></pre></div>
+<hr />
+<h3 id="4-hardware-aware-tuning-agentide-config-sync">4. Hardware-aware tuning &amp; agent/IDE config sync ⚡ <a class="heading-anchor" href="#4-hardware-aware-tuning-agentide-config-sync" aria-label="Link to 4. Hardware-aware tuning &amp; agent/IDE config sync ⚡">#</a></h3>
+<p>Stop guessing which model quantization, context window, or batch size fits your GPU, and stop hand-editing JSON files every time you load a new model.</p>
+<ul>
+<li><strong>Local hardware detection</strong>: Inspects GPU model, VRAM capacity, CUDA/driver versions, system RAM, and CPU cores (<code>lapel doctor</code>, <code>lapel setup</code>)</li>
+<li><strong>Model tier advisor</strong>: Recommends model parameter tiers and quantizations tailored to your available VRAM</li>
+<li><strong>CLI agent launcher (<code>lapel run</code>)</strong>: Auto-detects installed CLI agents (<strong>Pi</strong>, <strong>Claude Code</strong>, <strong>GitHub Copilot CLI</strong>) and launches them inside WSL wired to your active Windows inference provider</li>
+<li><strong>VS Code plugin sync <em>(in progress)</em></strong>: Generates and syncs model configurations with VRAM-sized context windows for <strong>Kilo Code</strong>, <strong>Continue</strong>, and <strong>Cline</strong></li>
+<li><strong>Verified community tuning profiles <em>(opt-in)</em></strong>: Query crowd-verified batch sizes, context limits, and agent compaction settings (<code>lapel community insights</code>) or share measured benchmarks (<code>lapel community share</code>)</li>
+</ul>
+<hr />
+<h2 id="core-user-journey">Core user journey <a class="heading-anchor" href="#core-user-journey" aria-label="Link to Core user journey">#</a></h2>
+<div class="code-wrap"><button class="copy-btn" type="button">Copy</button><pre><code>doctor → setup → run
+              ↘ troubleshoot (status / provider reachability / config)</code></pre></div>
+<div class="table-wrap"><table>
+<thead><tr><th>Step</th><th>Command</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td><strong>1. Doctor</strong></td><td><code>lapel doctor</code></td><td>Checks WSL2 availability, kernel/GPU status, hardware specs, and model tier recommendation</td></tr>
+<tr><td><strong>2. Setup</strong></td><td><code>lapel setup</code></td><td>One command: checks providers, provisions the <code>lapel</code> WSL distro, imports workspace, and configures jail</td></tr>
+<tr><td><strong>3. Run</strong></td><td><code>lapel run</code></td><td>Detects your installed coding agent, wires it to your active provider, and launches a sandboxed session</td></tr>
+<tr><td><strong>Troubleshoot</strong></td><td><code>lapel status</code> / <code>lapel provider reachability</code></td><td>Inspects drift against baseline and classifies WSL-to-Windows networking issues</td></tr>
+</tbody></table></div>
+<hr />
+<h2 id="declarative-configuration-init-plan-apply-status">Declarative configuration (<code>init</code> / <code>plan</code> / <code>apply</code> / <code>status</code>) <a class="heading-anchor" href="#declarative-configuration-init-plan-apply-status" aria-label="Link to Declarative configuration (init / plan / apply / status)">#</a></h2>
+<p>For power users and teams who want reproducible configuration management, <code>lapel</code> supports a <code>lapel.yaml</code> manifest with SQLite-backed drift detection:</p>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel init                # scaffold lapel.yaml in current directory
+lapel plan                # preview drift between live state and lapel.yaml (non-zero exit on drift)
+lapel apply               # persist baseline to .lapel/state.db + import workspace
+lapel status              # compare live state against persisted baseline over time</code></pre></div>
+<h3 id="manifest-schema-lapelyaml">Manifest schema (<code>lapel.yaml</code>) <a class="heading-anchor" href="#manifest-schema-lapelyaml" aria-label="Link to Manifest schema (lapel.yaml)">#</a></h3>
+<div class="code-wrap"><span class="code-lang">yaml</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-yaml">apiVersion: lapel.dev/v1
+name: lapel-project
+
+environment:
+  distribution: lapel
+  base: ubuntu          # &#34;ubuntu&#34; | &#34;debian&#34;; defaults to &#34;ubuntu&#34;
+  version: &#34;24.04&#34;      # pinned release; auto-selected default when omitted
+  packages:             # additional apt packages beyond the built-in agent toolkit
+    - ripgrep
+    - fd-find
+    - tree
+  style:
+    preset: lapel-dark  # &#34;lapel-dark&#34; (default) | &#34;amber&#34; | &#34;minimal&#34; | &#34;none&#34;
+    badge: &#34;&#34;           # optional custom prompt badge (defaults to distro name)
+    banner: true        # show one-line status banner on interactive shell login
+    tabColor: &#34;&#34;        # optional hex override for Windows Terminal tab (#RRGGBB)
+    background: &#34;&#34;      # optional hex override for Windows Terminal scheme (#RRGGBB)
+    windowsTerminal: true
+
+provider:
+  name: local
+  type: lm-studio       # &#34;lm-studio&#34; | &#34;ollama&#34; | &#34;openai-compatible&#34;
+  baseURL: &#34;http://127.0.0.1:1234&#34;
+  connectionTimeout: 8s
+
+agent:
+  name: pi              # &#34;pi&#34; | &#34;claude-code&#34; | &#34;copilot&#34;
+  provider: local
+
+workspace:
+  name: workspace
+  path: &#34;.&#34;             # Windows path to import into WSL
+  importMode: bind      # &#34;bind&#34; (bind mount) | &#34;copy&#34; (rsync snapshot)
+
+jail:
+  name: developer
+  profile: developer
+  user: agent           # Linux user for agent sessions
+  filesystem:
+    &#34;C:\\Users\\user\\Projects&#34;: read-write
+    &#34;C:\\Windows\\System32&#34;: deny
+  network: unrestricted # &#34;unrestricted&#34; | &#34;outbound-only&#34; | &#34;none&#34;
+  processes:
+    privileged: false   # agent runs as non-root by default
+    timeoutSeconds: 300 # kill long-running processes after 5 min</code></pre></div>
+<hr />
+<h2 id="architecture-overview">Architecture overview <a class="heading-anchor" href="#architecture-overview" aria-label="Link to Architecture overview">#</a></h2>
+<div class="mermaid-wrap"><pre class="mermaid">graph TD
+    subgraph WindowsHost[&#34;Windows Host&#34;]
+        A[&#34;LM Studio / Ollama&lt;br/&gt;(GPU Inference)&#34;]
+        C[&#34;lapel CLI&lt;br/&gt;(Control Plane)&#34;]
+        V[&#34;VS Code Plugins&lt;br/&gt;(Kilo Code / Continue / Cline)&#34;]
+    end
+
+    subgraph WSL2Dist[&#34;WSL2 Distribution (lapel)&#34;]
+        D[&#34;Sandboxed Agent User&lt;br/&gt;(Pi / Claude Code / Copilot)&#34;]
+        E[&#34;SSH &amp; Process Group Lifecycle&#34;]
+        F[&#34;Jail Enforcer &amp; Scoped Workspace&#34;]
+    end
+
+    C --&gt;|&#34;1. Probe &amp; Discover Models&#34;| A
+    C --&gt;|&#34;2. Provision, Mount &amp; Launch&#34;| WSL2Dist
+    C -.-&gt;|&#34;3. Sync Model Configs&#34;| V
+    D --&gt;|&#34;4. NAT Gateway Route (/proc/net/route)&#34;| A
+    V --&gt;|&#34;Localhost API&#34;| A</pre></div>
+
+    </article>
+  </main>
+
+  <footer>
+    <div class="container footer-inner">
+      <div>&copy; 2026 lapel &middot; Licensed under Apache 2.0</div>
+      <div class="footer-links">
+        <a href="index.html">Home</a>
+        <a href="features.html">Feature Guide</a>
+        <a href="community-design.html">Community Design</a>
+        <a href="e2e-testing.html">E2E Testing</a>
+        <a href="wsl-dns-issue.html">WSL DNS Issue</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll(".copy-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const wrap = btn.closest(".code-wrap");
+        const code = wrap ? wrap.querySelector("code") : null;
+        const text = code ? code.innerText : "";
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = btn.textContent;
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        } catch (_) {}
+      });
+    });
+  </script>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "default" });
+  </script>
+</body>
+</html>
