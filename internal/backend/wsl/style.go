@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode/utf16"
 
@@ -256,10 +257,14 @@ type wtScheme struct {
 // fragment file that registers the Lapel color scheme and updates the managed
 // WSL distribution's dynamic profile without touching the user's settings.json.
 func BuildWindowsTerminalFragment(style ResolvedStyle) ([]byte, error) {
-	return buildWindowsTerminalFragmentWithIcon(style, "ϟ")
+	return buildWindowsTerminalFragmentWithTargets(style, "ϟ", []string{wslDynamicProfileGUID(style.Distro)})
 }
 
 func buildWindowsTerminalFragmentWithIcon(style ResolvedStyle, icon string) ([]byte, error) {
+	return buildWindowsTerminalFragmentWithTargets(style, icon, []string{wslDynamicProfileGUID(style.Distro)})
+}
+
+func buildWindowsTerminalFragmentWithTargets(style ResolvedStyle, icon string, targetGUIDs []string) ([]byte, error) {
 	if !style.Enabled || !style.WindowsTerminal {
 		return nil, nil
 	}
@@ -295,26 +300,138 @@ func buildWindowsTerminalFragmentWithIcon(style ResolvedStyle, icon string) ([]b
 	if style.Badge != "" && !strings.EqualFold(style.Badge, "lapel") {
 		profileTitle = fmt.Sprintf("lapel (%s)", style.Badge)
 	}
+
+	if len(targetGUIDs) == 0 {
+		targetGUIDs = []string{wslDynamicProfileGUID(style.Distro)}
+	}
+	profiles := make([]wtProfile, 0, len(targetGUIDs))
+	seen := make(map[string]bool, len(targetGUIDs))
+	for _, guid := range targetGUIDs {
+		guid = strings.TrimSpace(guid)
+		if guid == "" {
+			continue
+		}
+		key := strings.ToLower(guid)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		// Intentionally omit Name on "updates" entries: Windows Terminal's
+		// _parseProfile synthesizes a profile GUID from (source, name) whenever
+		// Name is set without Guid, which makes _parseFragment key multiple
+		// "updates" entries under the same synthesized GUID (triggering a
+		// "Found multiple profiles with the same GUID" warning and dropping
+		// subsequent updates). The underlying WSL profile already carries the
+		// distro name, and TabTitle sets the tab label.
+		profiles = append(profiles, wtProfile{
+			Updates:           guid,
+			TabTitle:          profileTitle,
+			TabColor:          style.TabColor,
+			ColorScheme:       style.SchemeName,
+			Icon:              icon,
+			StartingDirectory: "~",
+		})
+	}
+
 	frag := wtFragment{
-		Schemes: []wtScheme{scheme},
-		Profiles: []wtProfile{
-			{
-				Updates:           wslDynamicProfileGUID(style.Distro),
-				Name:              profileTitle,
-				TabTitle:          profileTitle,
-				TabColor:          style.TabColor,
-				ColorScheme:       style.SchemeName,
-				Icon:              icon,
-				StartingDirectory: "~",
-			},
-		},
+		Schemes:  []wtScheme{scheme},
+		Profiles: profiles,
 	}
 
 	return json.MarshalIndent(frag, "", "  ")
 }
 
+// windowsTerminalTargetGUIDs returns the profile GUIDs that lapel's fragment
+// should update for distro: always the legacy Windows.Terminal.Wsl dynamic
+// profile GUID, plus any modern Microsoft.WSL fragment profile GUID discovered
+// under <fragRoot>/Microsoft.WSL/*.json (modern WSL 2.4+/3.x hides the legacy
+// dynamic profile and creates its own fragment profile with a distinct GUID).
+func windowsTerminalTargetGUIDs(fragRoot, distro string) []string {
+	legacy := wslDynamicProfileGUID(distro)
+	targets := []string{legacy}
+	seen := map[string]bool{strings.ToLower(legacy): true}
+	for _, guid := range discoverMicrosoftWSLProfileGUIDs(fragRoot, distro) {
+		key := strings.ToLower(guid)
+		if !seen[key] {
+			seen[key] = true
+			targets = append(targets, guid)
+		}
+	}
+	return targets
+}
+
+// discoverMicrosoftWSLProfileGUIDs scans <fragRoot>/Microsoft.WSL/*.json for
+// profiles belonging to distro (matched either by profile name or because the
+// same fragment hides distro's legacy Windows.Terminal.Wsl dynamic profile).
+func discoverMicrosoftWSLProfileGUIDs(fragRoot, distro string) []string {
+	if strings.TrimSpace(fragRoot) == "" || strings.TrimSpace(distro) == "" {
+		return nil
+	}
+	pattern := filepath.Join(fragRoot, "Microsoft.WSL", "*.json")
+	files, err := filepath.Glob(pattern)
+	if err != nil || len(files) == 0 {
+		return nil
+	}
+	legacyGUID := wslDynamicProfileGUID(distro)
+
+	type rawProfile struct {
+		GUID    string `json:"guid"`
+		Updates string `json:"updates"`
+		Name    string `json:"name"`
+	}
+	type rawFragment struct {
+		Profiles []rawProfile `json:"profiles"`
+	}
+
+	var guids []string
+	seen := make(map[string]bool)
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		var frag rawFragment
+		if err := json.Unmarshal(raw, &frag); err != nil {
+			continue
+		}
+		fileMatchesLegacy := false
+		for _, p := range frag.Profiles {
+			if strings.EqualFold(strings.TrimSpace(p.Updates), legacyGUID) {
+				fileMatchesLegacy = true
+				break
+			}
+		}
+		for _, p := range frag.Profiles {
+			guid := strings.TrimSpace(p.GUID)
+			if guid == "" {
+				continue
+			}
+			if fileMatchesLegacy || strings.EqualFold(strings.TrimSpace(p.Name), distro) {
+				key := strings.ToLower(guid)
+				if !seen[key] {
+					seen[key] = true
+					guids = append(guids, guid)
+				}
+			}
+		}
+	}
+	sort.Strings(guids)
+	return guids
+}
+
+const (
+	// wtFragmentDirName is the subdirectory under
+	// %LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments where lapel writes
+	// its fragment. It intentionally sorts after "Microsoft.WSL" (NTFS lexical
+	// order): Windows Terminal merges fragments as it iterates subdirectories,
+	// so an "updates" entry targeting a Microsoft.WSL fragment profile only
+	// matches if loaded after Microsoft.WSL.
+	wtFragmentDirName       = "wsl-lapel"
+	legacyWTFragmentDirName = "lapel"
+)
+
 // windowsTerminalFragmentPath resolves the path to lapel's Windows Terminal
-// JSON fragment (%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\lapel\lapel.json).
+// JSON fragment (%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\wsl-lapel\lapel.json).
 // Returns "" when no Windows LocalAppData directory can be determined.
 func windowsTerminalFragmentPath() string {
 	localAppData := os.Getenv("LOCALAPPDATA")
@@ -329,7 +446,20 @@ func windowsTerminalFragmentPath() string {
 	if localAppData == "" {
 		return ""
 	}
-	return filepath.Join(localAppData, "Microsoft", "Windows Terminal", "Fragments", "lapel", "lapel.json")
+	return filepath.Join(localAppData, "Microsoft", "Windows Terminal", "Fragments", wtFragmentDirName, "lapel.json")
+}
+
+// cleanupLegacyWindowsTerminalFragment removes the pre-fix Fragments\lapel\
+// files so stale fragments sorting before Microsoft.WSL don't linger after
+// upgrading.
+func cleanupLegacyWindowsTerminalFragment(fragRoot, currentDir string) {
+	legacyDir := filepath.Join(fragRoot, legacyWTFragmentDirName)
+	if strings.EqualFold(filepath.Clean(legacyDir), filepath.Clean(currentDir)) {
+		return
+	}
+	_ = os.Remove(filepath.Join(legacyDir, "lapel.json"))
+	_ = os.Remove(filepath.Join(legacyDir, "lapel-icon.png"))
+	_ = os.Remove(legacyDir) // succeeds only if now empty
 }
 
 // ApplyWindowsTerminalFragment writes (or removes, when disabled) the Windows
@@ -345,7 +475,11 @@ func ApplyWindowsTerminalFragment(distro string, spec domain.EnvironmentStyle) (
 
 func applyWindowsTerminalFragmentAt(fragPath, distro string, spec domain.EnvironmentStyle) (string, error) {
 	style := ResolveStyle(distro, spec)
-	iconPath := filepath.Join(filepath.Dir(fragPath), "lapel-icon.png")
+	fragDir := filepath.Dir(fragPath)
+	fragRoot := filepath.Dir(fragDir)
+	iconPath := filepath.Join(fragDir, "lapel-icon.png")
+	cleanupLegacyWindowsTerminalFragment(fragRoot, fragDir)
+
 	if !style.Enabled || !style.WindowsTerminal {
 		if err := os.Remove(fragPath); err != nil && !os.IsNotExist(err) {
 			return "", fmt.Errorf("removing Windows Terminal fragment %s: %w", fragPath, err)
@@ -353,10 +487,11 @@ func applyWindowsTerminalFragmentAt(fragPath, distro string, spec domain.Environ
 		if err := os.Remove(iconPath); err != nil && !os.IsNotExist(err) {
 			return "", fmt.Errorf("removing Windows Terminal icon %s: %w", iconPath, err)
 		}
+		_ = os.Remove(fragDir) // succeeds only if now empty
 		return "", nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(fragPath), 0o755); err != nil {
+	if err := os.MkdirAll(fragDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating Windows Terminal fragment dir: %w", err)
 	}
 
@@ -372,7 +507,8 @@ func applyWindowsTerminalFragmentAt(fragPath, distro string, spec domain.Environ
 		return "", fmt.Errorf("writing Windows Terminal icon %s: %w", iconPath, err)
 	}
 
-	data, err := buildWindowsTerminalFragmentWithIcon(style, iconPath)
+	targets := windowsTerminalTargetGUIDs(fragRoot, style.Distro)
+	data, err := buildWindowsTerminalFragmentWithTargets(style, iconPath, targets)
 	if err != nil {
 		return "", fmt.Errorf("building Windows Terminal fragment: %w", err)
 	}

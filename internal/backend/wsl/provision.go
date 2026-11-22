@@ -143,7 +143,7 @@ func DefaultProvisionOptions(spec domain.Environment) ProvisionOptions {
 }
 
 // WSLBuildThreshold is the Windows build number from which [interop]
-// appendWindowsPaths=false in /etc/wsl.conf correctly suppresses automatic
+// appendWindowsPath=false in /etc/wsl.conf correctly suppresses automatic
 // Windows PATH appending. Builds before 17093 (RS4) do not support this key.
 const WSLBuildThreshold = 17093
 
@@ -465,16 +465,31 @@ func setupFreshDistro(ctx context.Context, distro, user string) error {
 	if err := validateUsername(user); err != nil {
 		return err
 	}
-	build := detectWSLBuild(ctx)
+	script := freshDistroSetupScript(user, detectWSLBuild(ctx))
+	// Target the freshly imported distro explicitly: it has no /etc/wsl.conf and
+	// no non-root user yet, so WSL runs the script as root. Using the package-
+	// level Dist here would run the script in whatever distro that variable
+	// names (verified 2026-11: it ran in Ubuntu-Lean as a non-root default user
+	// and failed with `useradd: Permission denied`).
+	if _, err := runScript(ctx, distro, script, false); err != nil {
+		return fmt.Errorf("fresh-distro setup in %s: %w", distro, err)
+	}
+	return nil
+}
+
+// freshDistroSetupScript builds the first-boot provisioning script that creates
+// users, configures passwordless sudo, writes /etc/wsl.conf and /etc/resolv.conf,
+// and installs the fallback PATH filter.
+func freshDistroSetupScript(user string, build int) string {
 	var interopSection string
 	if build >= WSLBuildThreshold || build == 0 { // 0 = detection failed, assume modern
-		interopSection = "\n[interop]\nappendWindowsPaths=false"
+		interopSection = "\n\n[interop]\nappendWindowsPath=false"
 	} else {
-		// Pre-17093 builds don't support [interop] appendWindowsPaths; rely on
+		// Pre-17093 builds don't support [interop] appendWindowsPath; rely on
 		// PATH filtering (perl one-liner) or accept the long PATH.
 		interopSection = ""
 	}
-	script := fmt.Sprintf(`set -e
+	return fmt.Sprintf(`set -e
 if ! id -u %s >/dev/null 2>&1; then
   getent group sudo >/dev/null || groupadd sudo
   useradd -m -s /bin/bash -G sudo %s
@@ -510,7 +525,7 @@ nameserver 8.8.8.8
 nameserver 8.8.4.4
 RESOLV
 # Runtime PATH filter: strip /mnt/[a-zA-Z]+ Windows mount paths from PATH.
-# This works even when [interop] appendWindowsPaths=false doesn't fully suppress them.
+# This works even when [interop] appendWindowsPath=false doesn't fully suppress them.
 # Handles single-letter mounts (/mnt/c, /mnt/d) and multi-character mounts (/mnt/cdrom).
 cat > /etc/profile.d/90-lapel-path-filter.sh <<'PROFILEEOF'
 #!/bin/bash
@@ -522,15 +537,6 @@ fi
 PROFILEEOF
 chmod +x /etc/profile.d/90-lapel-path-filter.sh
 `, user, user, shellQuote(user), user, user, user, interopSection)
-	// Target the freshly imported distro explicitly: it has no /etc/wsl.conf and
-	// no non-root user yet, so WSL runs the script as root. Using the package-
-	// level Dist here would run the script in whatever distro that variable
-	// names (verified 2026-11: it ran in Ubuntu-Lean as a non-root default user
-	// and failed with `useradd: Permission denied`).
-	if _, err := runScript(ctx, distro, script, false); err != nil {
-		return fmt.Errorf("fresh-distro setup in %s: %w", distro, err)
-	}
-	return nil
 }
 
 // validateUsername restricts a username to the POSIX login-name character set
