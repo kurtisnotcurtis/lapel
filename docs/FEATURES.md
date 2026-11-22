@@ -171,22 +171,26 @@ jail:
 ## Architecture overview
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph WindowsHost["Windows Host"]
-        A["LM Studio / Ollama<br/>(GPU Inference)"]
+        direction TB
         C["lapel CLI<br/>(Control Plane)"]
+        A["LM Studio / Ollama<br/>(GPU Inference)"]
         V["VS Code Plugins<br/>(Kilo Code / Continue / Cline)"]
+        C -->|"1. Probe & Discover Models"| A
+        C -.->|"3. Sync Model Configs"| V
+        V -->|"Localhost API"| A
     end
 
     subgraph WSL2Dist["WSL2 Distribution (lapel)"]
+        direction TB
         D["Sandboxed Agent User<br/>(Pi / Claude Code / Copilot)"]
-        E["SSH & Process Group Lifecycle"]
-        F["Jail Enforcer & Scoped Workspace"]
+        F["Jail Enforcer &<br/>Scoped Workspace"]
+        E["SSH & Process Group<br/>Lifecycle"]
+        D --- F
+        D --- E
     end
 
-    C -->|"1. Probe & Discover Models"| A
-    C -->|"2. Provision, Mount & Launch"| WSL2Dist
-    C -.->|"3. Sync Model Configs"| V
-    D -->|"4. NAT Gateway Route (/proc/net/route)"| A
-    V -->|"Localhost API"| A
+    C -->|"2. Provision, Mount<br/>& Launch"| WSL2Dist
+    D -->|"4. NAT Gateway Route<br/>(/proc/net/route)"| A
 ```

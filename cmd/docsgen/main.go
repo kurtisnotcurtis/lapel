@@ -144,10 +144,221 @@ var pageTmpl = template.Must(template.New("doc").Parse(`<!DOCTYPE html>
     });
   </script>
   {{- if .HasMermaid}}
+  <div class="mermaid-modal" id="mermaid-modal" role="dialog" aria-modal="true" aria-label="Expanded diagram viewer">
+    <div class="mermaid-modal-dialog">
+      <div class="mermaid-toolbar">
+        <span class="mermaid-toolbar-label">Diagram viewer <span class="mermaid-toolbar-hint">&middot; Drag to pan &middot; Ctrl+scroll to zoom &middot; Esc to close</span></span>
+        <div class="mermaid-controls">
+          <button type="button" class="mermaid-btn" data-modal-action="out" title="Zoom out" aria-label="Zoom out">&minus;</button>
+          <button type="button" class="mermaid-btn mermaid-btn-zoom-level" data-modal-action="reset" title="Reset zoom">100%</button>
+          <button type="button" class="mermaid-btn" data-modal-action="in" title="Zoom in" aria-label="Zoom in">+</button>
+          <button type="button" class="mermaid-btn" data-modal-action="fit" title="Fit diagram to window">Fit</button>
+          <button type="button" class="mermaid-btn" data-modal-action="close" title="Close (Esc)" aria-label="Close expanded diagram">&times; Close</button>
+        </div>
+      </div>
+      <div class="mermaid-modal-viewport" id="mermaid-modal-viewport">
+        <div class="mermaid-modal-canvas" id="mermaid-modal-canvas"></div>
+      </div>
+    </div>
+  </div>
   <script type="module">
     import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
     const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "default" });
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: dark ? "dark" : "default",
+      themeVariables: { fontSize: "15px" },
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: "basis", padding: 16 }
+    });
+    await mermaid.run({ querySelector: ".mermaid" });
+
+    function getNaturalSize(svg) {
+      const vb = svg.viewBox && svg.viewBox.baseVal;
+      if (vb && vb.width > 0 && vb.height > 0) {
+        return { width: vb.width, height: vb.height };
+      }
+      const rect = svg.getBoundingClientRect();
+      return { width: Math.max(rect.width, 400), height: Math.max(rect.height, 240) };
+    }
+
+    function enableDragPan(viewport) {
+      let dragging = false;
+      let startX = 0, startY = 0, scrollLeft = 0, scrollTop = 0;
+      viewport.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0 || !viewport.classList.contains("is-zoomed")) return;
+        dragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        scrollLeft = viewport.scrollLeft;
+        scrollTop = viewport.scrollTop;
+        viewport.classList.add("is-dragging");
+        viewport.setPointerCapture(e.pointerId);
+      });
+      viewport.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        viewport.scrollLeft = scrollLeft - (e.clientX - startX);
+        viewport.scrollTop = scrollTop - (e.clientY - startY);
+      });
+      const stop = () => {
+        if (!dragging) return;
+        dragging = false;
+        viewport.classList.remove("is-dragging");
+      };
+      viewport.addEventListener("pointerup", stop);
+      viewport.addEventListener("pointercancel", stop);
+    }
+
+    const modal = document.getElementById("mermaid-modal");
+    const modalViewport = document.getElementById("mermaid-modal-viewport");
+    const modalCanvas = document.getElementById("mermaid-modal-canvas");
+    const modalLevelBtn = modal.querySelector('[data-modal-action="reset"]');
+    let modalSvg = null;
+    let modalNat = { width: 800, height: 600 };
+    let modalScale = 1;
+
+    function applyModalScale(scale) {
+      if (!modalSvg) return;
+      modalScale = Math.min(4, Math.max(0.4, scale));
+      const w = Math.round(modalNat.width * modalScale);
+      const h = Math.round(modalNat.height * modalScale);
+      modalSvg.style.width = w + "px";
+      modalSvg.style.height = h + "px";
+      modalLevelBtn.textContent = Math.round(modalScale * 100) + "%";
+      const overflows = w > modalViewport.clientWidth - 40 || h > modalViewport.clientHeight - 40;
+      modalViewport.classList.toggle("is-zoomed", overflows);
+    }
+
+    function fitModal() {
+      if (!modalSvg) return;
+      const availW = Math.max(200, modalViewport.clientWidth - 56);
+      const availH = Math.max(200, modalViewport.clientHeight - 56);
+      const fit = Math.min(availW / modalNat.width, availH / modalNat.height, 2.2);
+      applyModalScale(fit);
+    }
+
+    function openModal(sourceSvg) {
+      modalNat = getNaturalSize(sourceSvg);
+      modalCanvas.innerHTML = "";
+      modalSvg = sourceSvg.cloneNode(true);
+      modalSvg.removeAttribute("style");
+      modalSvg.style.maxWidth = "none";
+      modalCanvas.appendChild(modalSvg);
+      modal.classList.add("open");
+      document.body.style.overflow = "hidden";
+      requestAnimationFrame(fitModal);
+    }
+
+    function closeModal() {
+      modal.classList.remove("open");
+      document.body.style.overflow = "";
+      modalCanvas.innerHTML = "";
+      modalSvg = null;
+    }
+
+    enableDragPan(modalViewport);
+    modalViewport.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      applyModalScale(modalScale + (e.deltaY < 0 ? 0.2 : -0.2));
+    }, { passive: false });
+
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+      const btn = e.target.closest("[data-modal-action]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-modal-action");
+      if (action === "in") applyModalScale(modalScale + 0.25);
+      else if (action === "out") applyModalScale(modalScale - 0.25);
+      else if (action === "reset") applyModalScale(1);
+      else if (action === "fit") fitModal();
+      else if (action === "close") closeModal();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (!modal.classList.contains("open")) return;
+      if (e.key === "Escape") closeModal();
+      else if (e.key === "+" || e.key === "=") applyModalScale(modalScale + 0.25);
+      else if (e.key === "-") applyModalScale(modalScale - 0.25);
+      else if (e.key === "0") fitModal();
+    });
+
+    document.querySelectorAll(".mermaid-wrap").forEach((wrap) => {
+      const pre = wrap.querySelector("pre.mermaid");
+      const svg = pre ? pre.querySelector("svg") : null;
+      if (!svg) return;
+
+      const nat = getNaturalSize(svg);
+      const toolbar = document.createElement("div");
+      toolbar.className = "mermaid-toolbar";
+      toolbar.innerHTML =
+        '<span class="mermaid-toolbar-label">Diagram <span class="mermaid-toolbar-hint">&middot; Click Expand or zoom to inspect</span></span>' +
+        '<div class="mermaid-controls">' +
+        '  <button type="button" class="mermaid-btn" data-action="out" title="Zoom out" aria-label="Zoom out">&minus;</button>' +
+        '  <button type="button" class="mermaid-btn mermaid-btn-zoom-level" data-action="fit" title="Reset to fit">Fit</button>' +
+        '  <button type="button" class="mermaid-btn" data-action="in" title="Zoom in" aria-label="Zoom in">+</button>' +
+        '  <button type="button" class="mermaid-btn" data-action="expand" title="Open fullscreen diagram viewer" aria-label="Expand diagram">&#x2922; Expand</button>' +
+        '</div>';
+
+      const viewport = document.createElement("div");
+      viewport.className = "mermaid-viewport";
+      const stage = document.createElement("div");
+      stage.className = "mermaid-stage";
+      pre.parentNode.insertBefore(toolbar, pre);
+      pre.parentNode.insertBefore(viewport, pre);
+      stage.appendChild(pre);
+      viewport.appendChild(stage);
+
+      const levelBtn = toolbar.querySelector('[data-action="fit"]');
+      let scale = null; // null == fit to container width
+
+      function applyInlineZoom(nextScale) {
+        if (nextScale === null) {
+          scale = null;
+          svg.style.width = "";
+          svg.style.height = "";
+          svg.style.maxWidth = "100%";
+          viewport.classList.remove("is-zoomed");
+          levelBtn.textContent = "Fit";
+          return;
+        }
+        scale = Math.min(3, Math.max(0.5, nextScale));
+        svg.style.maxWidth = "none";
+        svg.style.width = Math.round(nat.width * scale) + "px";
+        svg.style.height = Math.round(nat.height * scale) + "px";
+        viewport.classList.add("is-zoomed");
+        levelBtn.textContent = Math.round(scale * 100) + "%";
+      }
+
+      function currentEffectiveScale() {
+        if (scale !== null) return scale;
+        const rect = svg.getBoundingClientRect();
+        return rect.width > 0 ? rect.width / nat.width : 1;
+      }
+
+      enableDragPan(viewport);
+
+      viewport.addEventListener("click", (e) => {
+        if (!viewport.classList.contains("is-zoomed")) {
+          openModal(svg);
+        }
+      });
+
+      viewport.addEventListener("wheel", (e) => {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        applyInlineZoom(currentEffectiveScale() + (e.deltaY < 0 ? 0.25 : -0.25));
+      }, { passive: false });
+
+      toolbar.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-action]");
+        if (!btn) return;
+        const action = btn.getAttribute("data-action");
+        if (action === "in") applyInlineZoom(currentEffectiveScale() + 0.25);
+        else if (action === "out") applyInlineZoom(currentEffectiveScale() - 0.25);
+        else if (action === "fit") applyInlineZoom(null);
+        else if (action === "expand") openModal(svg);
+      });
+    });
   </script>
   {{- end}}
 </body>

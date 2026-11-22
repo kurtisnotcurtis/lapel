@@ -88,8 +88,13 @@ func TestGenerateDocsOnWorkspaceDocs(t *testing.T) {
 		if !strings.Contains(out, `class="doc-article"`) {
 			t.Errorf("%s missing doc-article container", spec.OutputFile)
 		}
-		if spec.SourceFile == "FEATURES.md" && !strings.Contains(out, "mermaid.esm.min.mjs") {
-			t.Errorf("features.html should include mermaid script")
+		if spec.SourceFile == "FEATURES.md" {
+			if !strings.Contains(out, "mermaid.esm.min.mjs") {
+				t.Errorf("features.html should include mermaid script")
+			}
+			if !strings.Contains(out, `id="mermaid-modal"`) || !strings.Contains(out, "mermaid-toolbar") {
+				t.Errorf("features.html should include interactive mermaid zoom/expand controls")
+			}
 		}
 		if spec.SourceFile != "FEATURES.md" && strings.Contains(out, "mermaid.esm.min.mjs") {
 			t.Errorf("%s should not include mermaid script", spec.OutputFile)
