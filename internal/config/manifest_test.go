@@ -59,6 +59,28 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if got := m.ProviderSpec().Name; got != "local" {
 		t.Errorf("provider.name = %q, want local", got)
 	}
+	if m.Environment.Systemd != nil || m.EnvSpec().Systemd != nil {
+		t.Errorf("expected unset environment.systemd to remain nil (defaults to true in backend)")
+	}
+}
+
+func TestLoadEnvironmentSystemdToggle(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, DefaultManifestName)
+	yamlWithFlag := validManifest + "\nenvironment:\n  systemd: false\n"
+	if err := os.WriteFile(path, []byte(yamlWithFlag), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if m.Environment.Systemd == nil || *m.Environment.Systemd {
+		t.Fatalf("expected environment.systemd=false, got %v", m.Environment.Systemd)
+	}
+	if spec := m.EnvSpec(); spec.Systemd == nil || *spec.Systemd {
+		t.Fatalf("expected EnvSpec().Systemd=false, got %v", spec.Systemd)
+	}
 }
 
 func TestLoadRejectsUnknownKeys(t *testing.T) {

@@ -31,6 +31,7 @@ func setupCmd() *cobra.Command {
 		workspacePath string
 		user          string
 		force         bool
+		systemd       bool
 	)
 
 	cmd := &cobra.Command{
@@ -142,12 +143,19 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			spec := domain.Environment{Name: wsl.Dist}
 			if manifestErr == nil && m != nil {
 				spec = m.EnvSpec()
+				if spec.Name == "" || strings.EqualFold(spec.Name, "local") {
+					spec.Name = wsl.Dist
+				}
 				if !cmd.Flags().Changed("user") && m.Jail.User != "" {
 					user = m.Jail.User
 				}
 				if !cmd.Flags().Changed("workspace") && m.Workspace.Path != "" {
 					workspacePath = m.Workspace.Path
 				}
+			}
+			if cmd.Flags().Changed("systemd") {
+				s := systemd
+				spec.Systemd = &s
 			}
 			if err := b.Provision(ctx, spec); err != nil {
 				return fmt.Errorf("provisioning failed: %w", err)
@@ -247,6 +255,7 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 	cmd.Flags().StringVar(&workspacePath, "workspace", "", "path to workspace directory (default: current directory)")
 	cmd.Flags().StringVar(&user, "user", "agent", "Linux user for jail context")
 	cmd.Flags().BoolVar(&force, "force", false, "reimport workspace even if it exists")
+	cmd.Flags().BoolVar(&systemd, "systemd", true, "enable systemd in /etc/wsl.conf (use --systemd=false for lightweight sshd-only boot)")
 
 	return cmd
 }

@@ -64,20 +64,28 @@ chmod 600 "$home/.ssh/authorized_keys"
 		return false, fmt.Errorf("installing ssh key: %w", err)
 	}
 
-	// Enable at boot and make sure sshd is running right now. systemctl covers
-	// systemd-based WSL distros; the fallbacks cover minimal images without it.
-	enable := "systemctl enable ssh 2>/dev/null || update-rc.d ssh defaults 2>/dev/null || true"
-	// Ubuntu's openssh-server postinst defers host-key generation to a
-	// boot-time unit. On distros that booted before the package was installed
-	// (the fresh-import case) no keys exist and sshd refuses to start with
-	// "no hostkeys available". ssh-keygen -A is idempotent: it only generates
-	// missing keys.
-	keys := "ssh-keygen -A 2>/dev/null || true"
-	start := "(systemctl restart ssh 2>/dev/null) || (service ssh start 2>/dev/null) || (/usr/sbin/sshd 2>/dev/null) || true"
-	if _, err := runRoot(ctx, dist, enable+"\n"+keys+"\n"+start); err != nil {
+	if _, err := runRoot(ctx, dist, buildSSHStartScript()); err != nil {
 		return false, fmt.Errorf("enabling ssh service: %w", err)
 	}
 	return true, nil
+}
+
+// buildSSHStartScript returns a root shell script that ensures /run/sshd and
+// host keys exist, then enables/starts sshd using systemd when PID 1 is systemd
+// or directly via service/sshd when systemd is disabled.
+func buildSSHStartScript() string {
+	return `mkdir -p -m 0755 /run/sshd
+ssh-keygen -A 2>/dev/null || true
+if [ -d /run/systemd/system ]; then
+  systemctl enable ssh 2>/dev/null || true
+  systemctl restart ssh 2>/dev/null || true
+else
+  if [ -f /run/sshd.pid ] && kill -0 "$(cat /run/sshd.pid 2>/dev/null)" 2>/dev/null; then
+    kill -HUP "$(cat /run/sshd.pid)" 2>/dev/null || true
+  else
+    (service ssh start 2>/dev/null) || (/usr/sbin/sshd 2>/dev/null) || true
+  fi
+fi`
 }
 
 // distroHostIP returns the first IP address reported by the distro itself

@@ -87,6 +87,11 @@ type ProvisionOptions struct {
 	// When empty, DefaultProvisionOptions fills in ~/.ssh/id_ed25519.pub. If the
 	// file does not exist, SSH key setup is skipped (not an error).
 	SSHPublicKeyPath string
+	// Systemd controls whether /etc/wsl.conf enables systemd (true) or boots
+	// with a lightweight [boot] command for sshd only (false). When nil,
+	// fresh imports default to true and existing distros keep their current
+	// /etc/wsl.conf [boot] setting.
+	Systemd *bool
 	// Style configures the visual shell prompt, login banner, and Windows
 	// Terminal fragment for the distribution.
 	Style domain.EnvironmentStyle
@@ -138,6 +143,7 @@ func DefaultProvisionOptions(spec domain.Environment) ProvisionOptions {
 		EnsurePackages:   true,
 		DefaultUser:      user,
 		SSHPublicKeyPath: keyPath,
+		Systemd:          spec.Systemd,
 		Style:            spec.Style,
 	}
 }
@@ -321,8 +327,9 @@ func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 		defaultUser = os.Getenv("USER")
 	}
 	if defaultUser != "" {
-		fmt.Printf("  • Configuring user %q, /etc/wsl.conf, and DNS in %q...\n", defaultUser, opts.Name)
-		if err := setupFreshDistro(ctx, opts.Name, defaultUser); err != nil {
+		systemdEnabled := opts.Systemd == nil || *opts.Systemd
+		fmt.Printf("  • Configuring user %q, /etc/wsl.conf (systemd=%v), and DNS in %q...\n", defaultUser, systemdEnabled, opts.Name)
+		if err := setupFreshDistro(ctx, opts.Name, defaultUser, systemdEnabled); err != nil {
 			return fmt.Errorf("setting up fresh distro %s: %w", opts.Name, err)
 		}
 		// --set-default-user is a --manage option, NOT a top-level flag (WSL
@@ -461,11 +468,11 @@ func (p *downloadProgressReader) Finish() {
 //     wsl.conf key is `default` (NOT `defaultUser` — WSL logs a config warning
 //     for unknown keys). This file makes the user choice durable across WSL
 //     metadata resets, which have been observed to revert the default to root.
-func setupFreshDistro(ctx context.Context, distro, user string) error {
+func setupFreshDistro(ctx context.Context, distro, user string, systemd bool) error {
 	if err := validateUsername(user); err != nil {
 		return err
 	}
-	script := freshDistroSetupScript(user, detectWSLBuild(ctx))
+	script := freshDistroSetupScript(user, detectWSLBuild(ctx), systemd)
 	// Target the freshly imported distro explicitly: it has no /etc/wsl.conf and
 	// no non-root user yet, so WSL runs the script as root. Using the package-
 	// level Dist here would run the script in whatever distro that variable
@@ -479,8 +486,9 @@ func setupFreshDistro(ctx context.Context, distro, user string) error {
 
 // freshDistroSetupScript builds the first-boot provisioning script that creates
 // users, configures passwordless sudo, writes /etc/wsl.conf and /etc/resolv.conf,
-// and installs the fallback PATH filter.
-func freshDistroSetupScript(user string, build int) string {
+// and installs the fallback PATH filter. When systemd is false, /etc/wsl.conf
+// disables systemd and installs a lightweight BootHookPath script for sshd.
+func freshDistroSetupScript(user string, build int, systemd bool) string {
 	var interopSection string
 	if build >= WSLBuildThreshold || build == 0 { // 0 = detection failed, assume modern
 		interopSection = "\n\n[interop]\nappendWindowsPath=false"
@@ -488,6 +496,14 @@ func freshDistroSetupScript(user string, build int) string {
 		// Pre-17093 builds don't support [interop] appendWindowsPath; rely on
 		// PATH filtering (perl one-liner) or accept the long PATH.
 		interopSection = ""
+	}
+	var bootHookSetup string
+	if !systemd {
+		bootHookSetup = fmt.Sprintf(`mkdir -p /usr/local/sbin
+cat > %s <<'LAPELBOOT'
+%sLAPELBOOT
+chmod 755 %s
+`, BootHookPath, BuildBootHookScript(), BootHookPath)
 	}
 	return fmt.Sprintf(`set -e
 if ! id -u %s >/dev/null 2>&1; then
@@ -502,9 +518,8 @@ fi
 echo %s " ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/systemctl, /usr/sbin/useradd, /usr/sbin/usermod, /bin/chmod, /bin/chown, /bin/mkdir, /usr/bin/tee, /bin/bash" > /etc/sudoers.d/90-lapel-%s
 chmod 440 /etc/sudoers.d/90-lapel-%s
 if [ -f /etc/wsl.conf ]; then cp /etc/wsl.conf /etc/wsl.conf.lapel-bak; fi
-cat > /etc/wsl.conf <<'WSLCONF'
-[boot]
-systemd=true
+%scat > /etc/wsl.conf <<'WSLCONF'
+%s
 
 [automount]
 enabled = true
@@ -536,7 +551,7 @@ elif command -v python3 >/dev/null 2>&1; then
 fi
 PROFILEEOF
 chmod +x /etc/profile.d/90-lapel-path-filter.sh
-`, user, user, shellQuote(user), user, user, user, interopSection)
+`, user, user, shellQuote(user), user, user, bootHookSetup, bootSection(systemd), user, interopSection)
 }
 
 // validateUsername restricts a username to the POSIX login-name character set
@@ -742,6 +757,13 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 		return nil // existing distro; opt out of package maintenance
 	} else {
 		fmt.Printf("  • Distro %q already exists\n", opts.Name)
+		if opts.Systemd != nil {
+			fmt.Printf("  • Updating /etc/wsl.conf systemd=%v in %q...\n", *opts.Systemd, opts.Name)
+			if err := ApplySystemdConfig(ctx, opts.Name, *opts.Systemd); err != nil {
+				return err
+			}
+			fmt.Printf("    ℹ Run `wsl --terminate %s` for the updated systemd setting to take effect.\n", opts.Name)
+		}
 	}
 	if err := InstallAgentToolkit(ctx, opts.Name, opts.Packages); err != nil {
 		return err

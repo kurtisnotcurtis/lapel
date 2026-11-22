@@ -54,6 +54,7 @@ A purpose-built minimal distro is a feature, not a limitation:
 ```bash
 lapel env status                  # inspect registered distro runtime state
 lapel env style --preset=amber    # switch WSL prompt & Windows Terminal theme preset
+lapel env systemd off --restart   # disable systemd and start sshd via lightweight [boot] hook
 lapel config                      # inspect host .wslconfig memory/CPU caps and networking warnings
 lapel provision                   # build the agent-optimized lapel WSL baseline (idempotent)
 ```
@@ -126,6 +127,7 @@ environment:
   distribution: lapel
   base: ubuntu          # "ubuntu" | "debian"; defaults to "ubuntu"
   version: "24.04"      # pinned release; auto-selected default when omitted
+  systemd: true         # set false to skip systemd and start sshd via lightweight [boot] hook
   packages:             # additional apt packages beyond the built-in agent toolkit
     - ripgrep
     - fd-find

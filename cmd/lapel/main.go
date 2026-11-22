@@ -188,7 +188,100 @@ func envCmd() *cobra.Command {
 			RunE:  inspectRun,
 		},
 		envStyleCmd(),
+		envSystemdCmd(),
 	)
+	return cmd
+}
+
+func envSystemdCmd() *cobra.Command {
+	var (
+		distro  string
+		restart bool
+	)
+	cmd := &cobra.Command{
+		Use:   "systemd [status|on|off]",
+		Short: "Inspect or toggle systemd in the managed WSL distribution",
+		Long: `Inspect or toggle systemd in /etc/wsl.conf for the managed WSL distribution.
+
+With no argument (or "status"), prints both the /etc/wsl.conf configuration and
+whether systemd is currently PID 1. Pass "off" to disable systemd and start sshd
+via WSL's lightweight [boot] command hook, or "on" to re-enable systemd.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			target := wsl.Dist
+			if m, err := config.LoadEffective(""); err == nil && m != nil {
+				if envSpec := m.EnvSpec(); envSpec.Distribution != "" {
+					target = envSpec.Distribution
+				}
+			}
+			if cmd.Flags().Changed("distro") && strings.TrimSpace(distro) != "" {
+				target = strings.TrimSpace(distro)
+			}
+
+			action := "status"
+			if len(args) == 1 {
+				action = strings.ToLower(strings.TrimSpace(args[0]))
+			}
+
+			switch action {
+			case "", "status":
+				st, err := wsl.InspectSystemd(ctx, target)
+				if err != nil {
+					return err
+				}
+				cfgStr := "unset (defaults to false in WSL)"
+				if st.Configured != nil {
+					cfgStr = fmt.Sprintf("%v", *st.Configured)
+				}
+				fmt.Printf("distro:     %s\n", st.Distro)
+				fmt.Printf("configured: systemd=%s\n", cfgStr)
+				if st.BootCommand != "" {
+					fmt.Printf("boot cmd:   %s\n", st.BootCommand)
+				}
+				fmt.Printf("runtime:    systemd active=%v, sshd running=%v\n", st.Active, st.SSHDRunning)
+				if st.Configured != nil && *st.Configured != st.Active {
+					fmt.Printf("  ℹ Pending restart: run `wsl --terminate %s` for systemd=%v to take effect.\n", st.Distro, *st.Configured)
+				}
+				return nil
+
+			case "on", "true", "enable", "enabled":
+				if err := wsl.ApplySystemdConfig(ctx, target, true); err != nil {
+					return err
+				}
+				fmt.Printf("✓ Enabled systemd in %s (/etc/wsl.conf)\n", target)
+				if restart {
+					if err := wsl.TerminateDistro(ctx, target); err != nil {
+						return err
+					}
+					fmt.Printf("✓ Terminated %s — systemd will be active on next shell/command\n", target)
+				} else {
+					fmt.Printf("  ℹ Run `wsl --terminate %s` (or re-run with --restart) to apply.\n", target)
+				}
+				return nil
+
+			case "off", "false", "disable", "disabled":
+				if err := wsl.ApplySystemdConfig(ctx, target, false); err != nil {
+					return err
+				}
+				fmt.Printf("✓ Disabled systemd in %s (/etc/wsl.conf) and installed %s for sshd\n", target, wsl.BootHookPath)
+				if restart {
+					if err := wsl.TerminateDistro(ctx, target); err != nil {
+						return err
+					}
+					fmt.Printf("✓ Terminated %s — lightweight boot hook will run on next shell/command\n", target)
+				} else {
+					fmt.Printf("  ℹ Run `wsl --terminate %s` (or re-run with --restart) to apply.\n", target)
+				}
+				return nil
+
+			default:
+				return fmt.Errorf("unknown action %q (want status, on, or off)", action)
+			}
+		},
+	}
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: lapel or manifest distribution)")
+	cmd.Flags().BoolVar(&restart, "restart", false, "terminate the WSL distro immediately so the change takes effect on next launch")
 	return cmd
 }
 
@@ -476,23 +569,38 @@ func wslConfigCmd() *cobra.Command {
 // idempotent: it imports a minimal Ubuntu/Debian distro if missing, then installs
 // only packages that are not already present.
 func provisionCmd() *cobra.Command {
-	return &cobra.Command{
+	var systemd bool
+	cmd := &cobra.Command{
 		Use:   "provision",
 		Short: "Install the agent-toolkit baseline into the distro (idempotent)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			fmt.Printf("=== lapel provision (%s) ===\n", wsl.Dist)
-			b := &wsl.DistBackend{}
 			spec := domain.Environment{Name: wsl.Dist}
+			if m, err := config.LoadEffective(""); err == nil && m != nil {
+				spec = m.EnvSpec()
+				if spec.Distribution != "" {
+					spec.Name = spec.Distribution
+				} else {
+					spec.Name = wsl.Dist
+				}
+			}
+			if cmd.Flags().Changed("systemd") {
+				s := systemd
+				spec.Systemd = &s
+			}
+			fmt.Printf("=== lapel provision (%s) ===\n", spec.Name)
+			b := &wsl.DistBackend{}
 			if err := b.Provision(ctx, spec); err != nil {
 				return fmt.Errorf("provisioning: %w", err)
 			}
-			fmt.Printf("✓ Agent-toolkit baseline installed into %s\n", wsl.Dist)
+			fmt.Printf("✓ Agent-toolkit baseline installed into %s\n", spec.Name)
 			fmt.Printf("  • Open a shell now: lapel shell (or lapel shell --wt for a new Windows Terminal tab)\n")
-			fmt.Printf("  • Restart Windows Terminal (close all windows) to see the %q profile in the dropdown\n", wsl.Dist)
+			fmt.Printf("  • Restart Windows Terminal (close all windows) to see the %q profile in the dropdown\n", spec.Name)
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&systemd, "systemd", true, "enable systemd in /etc/wsl.conf (use --systemd=false for lightweight sshd-only boot)")
+	return cmd
 }
 
 // checkLocalhostCmd validates that the distro can reach localhost services on

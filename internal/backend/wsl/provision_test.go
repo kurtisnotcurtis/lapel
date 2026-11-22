@@ -233,20 +233,31 @@ func TestDownloadProgressReaderReportsMilestones(t *testing.T) {
 }
 
 func TestFreshDistroSetupScriptUsesValidInteropKey(t *testing.T) {
-	modern := freshDistroSetupScript("kurt", 26100)
+	modern := freshDistroSetupScript("kurt", 26100, true)
 	if !strings.Contains(modern, "[interop]\nappendWindowsPath=false") {
 		t.Errorf("expected singular [interop] appendWindowsPath=false for modern WSL build:\n%s", modern)
 	}
 	if strings.Contains(modern, "appendWindowsPaths") {
 		t.Errorf("must not emit invalid plural key appendWindowsPaths:\n%s", modern)
 	}
+	if !strings.Contains(modern, "[boot]\nsystemd=true") {
+		t.Errorf("expected [boot] systemd=true when enabled:\n%s", modern)
+	}
 
-	fallback := freshDistroSetupScript("kurt", 0)
+	noSystemd := freshDistroSetupScript("kurt", 26100, false)
+	if !strings.Contains(noSystemd, "[boot]\nsystemd=false\ncommand="+BootHookPath) {
+		t.Errorf("expected [boot] systemd=false with boot hook when disabled:\n%s", noSystemd)
+	}
+	if !strings.Contains(noSystemd, "cat > "+BootHookPath) {
+		t.Errorf("expected boot hook installation when systemd=false:\n%s", noSystemd)
+	}
+
+	fallback := freshDistroSetupScript("kurt", 0, true)
 	if !strings.Contains(fallback, "[interop]\nappendWindowsPath=false") {
 		t.Errorf("expected [interop] appendWindowsPath=false when build detection returns 0:\n%s", fallback)
 	}
 
-	legacy := freshDistroSetupScript("kurt", 17000)
+	legacy := freshDistroSetupScript("kurt", 17000, true)
 	if strings.Contains(legacy, "[interop]\n") {
 		t.Errorf("did not expect [interop] section in wsl.conf for pre-17093 build:\n%s", legacy)
 	}

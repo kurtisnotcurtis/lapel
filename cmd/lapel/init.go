@@ -77,6 +77,8 @@ environment:
   version: "24.04"
   # Pin the distro rootfs image (+checksum) instead of importing from a name.
   rootfsImage: ""
+  # Boot WSL with systemd (true) or a lightweight [boot] hook for sshd only (false).
+  systemd: true
   # Runtimes -> pinned major versions (the agent-toolkit baseline is always
   # applied; list extras here).
   runtimes:

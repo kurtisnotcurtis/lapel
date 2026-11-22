@@ -56,6 +56,7 @@ type Environment struct {
 	Base         string            `yaml:"base"`         // "ubuntu" | "debian"
 	Version      string            `yaml:"version"`      // e.g. "24.04" / "12"
 	RootFSImage  string            `yaml:"rootfsImage"`  // pinned image (+checksum) override
+	Systemd      *bool             `yaml:"systemd"`      // boot WSL with systemd (nil defaults to true)
 	Runtimes     map[string]string `yaml:"runtimes"`     // toolchain -> pinned major version
 	Packages     []string          `yaml:"packages"`     // extra apt packages (agent-toolkit baseline always applies)
 	Style        EnvironmentStyle  `yaml:"style"`        // shell prompt & Windows Terminal styling
@@ -224,6 +225,7 @@ func (m *Manifest) EnvSpec() domain.Environment {
 		Runtimes:     m.Environment.Runtimes,
 		Packages:     m.Environment.Packages,
 		RootFSImage:  m.Environment.RootFSImage,
+		Systemd:      m.Environment.Systemd,
 		Style: domain.EnvironmentStyle{
 			Preset:          m.Environment.Style.Preset,
 			Badge:           m.Environment.Style.Badge,

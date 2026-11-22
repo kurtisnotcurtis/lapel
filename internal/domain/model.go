@@ -56,6 +56,7 @@ type Environment struct {
 	Runtimes     map[string]string `json:"runtimes"`          // toolchain -> pinned major version
 	Packages     []string          `json:"packages"`          // apt packages to install
 	RootFSImage  string            `json:"rootFSImage"`       // pinned rootfs + checksum
+	Systemd      *bool             `json:"systemd,omitempty"` // boot WSL with systemd (nil defaults to true)
 	Style        EnvironmentStyle  `json:"style,omitempty"`   // shell prompt & terminal styling
 }
 
