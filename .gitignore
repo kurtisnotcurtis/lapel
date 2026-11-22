@@ -1,7 +1,7 @@
 # Build output
 /bin/
-lapel.exe
-lapel
+/lapel.exe
+/lapel
 
 # Project-local desired-state SQLite store
 .lapel/

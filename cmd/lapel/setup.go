@@ -234,6 +234,7 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			}
 
 			fmt.Printf("\nNext steps:\n")
+			fmt.Printf("  • Open a shell in WSL: lapel shell (or restart Windows Terminal for the %q profile)\n", spec.Name)
 			fmt.Printf("  • Run your agent with: lapel run\n")
 			fmt.Printf("  • Sync VS Code plugins: lapel apply --plugin=kilo-code (or --all)\n")
 			fmt.Printf("  • Benchmark your rig: lapel benchmark\n")

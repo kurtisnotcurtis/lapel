@@ -13,14 +13,14 @@ import (
 type vec2 struct{ x, y float64 }
 
 // RenderWindowsTerminalIconPNG renders a 64x64 transparent antialiased PNG of
-// the lapel-bolt-cutout logo tinted to hexColor (e.g. "#0EA5E9" or "#F59E0B").
+// the lapel-bolt-tucked logo tinted to hexColor (e.g. "#0EA5E9" or "#F59E0B").
 // Windows Terminal profile icons require raster formats (.png/.ico) rather than
 // SVG, so generating this in pure Go keeps lapel.exe self-contained and matches
 // any preset or custom --tab-color override.
 func RenderWindowsTerminalIconPNG(hexColor string) ([]byte, error) {
 	r, g, b := parseHexColor(hexColor, 0x38, 0xBD, 0xF8)
 
-	// Single closed lapel-bolt cutout silhouette sampled into a smooth polyline
+	// Single closed lapel-bolt tucked silhouette sampled into a smooth polyline
 	// in 0..100 viewBox coordinates.
 	outer := buildLapelBoltOuterPoly()
 
@@ -84,13 +84,13 @@ func buildLapelBoltOuterPoly() []vec2 {
 			pts = append(pts, vec2{x, y})
 		}
 	}
-	// Exact single closed path of the lapel bolt cutout logo (viewBox 0 0 100 100).
+	// Exact single closed path of the lapel bolt tucked logo (viewBox 0 0 100 100).
 	appendCubic(vec2{37, 8}, vec2{48.5, 9.5}, vec2{59.5, 12.5}, vec2{69, 17}, 16)
 	pts = append(pts, vec2{69, 17}, vec2{72, 34}, vec2{55.5, 41})
 	appendCubic(vec2{70, 47}, vec2{58, 65}, vec2{44, 79}, vec2{28, 92}, 24)
-	appendCubic(vec2{28, 92}, vec2{34.5, 71}, vec2{38.5, 54}, vec2{39.5, 40.5}, 20)
-	appendCubic(vec2{39.5, 40.5}, vec2{40, 33.5}, vec2{36.5, 28.5}, vec2{28, 26.5}, 12)
-	appendCubic(vec2{28, 26.5}, vec2{34.5, 25}, vec2{40.5, 23.2}, vec2{46, 21.2}, 12)
+	appendCubic(vec2{28, 92}, vec2{34.5, 71}, vec2{39.2, 53}, vec2{39.5, 39.5}, 20)
+	appendCubic(vec2{39.5, 39.5}, vec2{39.6, 33}, vec2{38.4, 28}, vec2{36.4, 24.2}, 12)
+	pts = append(pts, vec2{36.4, 24.2})
 	appendCubic(vec2{46, 21.2}, vec2{44.5, 15.8}, vec2{41.5, 11.2}, vec2{37, 8}, 12)
 	return pts
 }

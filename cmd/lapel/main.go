@@ -53,6 +53,7 @@ func root() *cobra.Command {
 		planCmd(),
 		checkLocalhostCmd(),
 		runCmd(),
+		shellCmd(),
 		pluginCmd(),
 		benchmarkCmd(),
 		communityCmd(),
@@ -257,6 +258,7 @@ func envStyleCmd() *cobra.Command {
 			fmt.Printf("✓ Applied %q style to %s (badge: %q, banner: %v)\n", resolved.Preset, distro, resolved.Badge, resolved.Banner)
 			if fragPath != "" {
 				fmt.Printf("✓ Updated Windows Terminal fragment: %s (scheme: %q, tabColor: %s)\n", fragPath, resolved.SchemeName, resolved.TabColor)
+				fmt.Printf("  ℹ Restart Windows Terminal (close all windows) if the %q profile does not appear in the dropdown yet.\n", distro)
 			}
 			return nil
 		},
@@ -486,6 +488,8 @@ func provisionCmd() *cobra.Command {
 				return fmt.Errorf("provisioning: %w", err)
 			}
 			fmt.Printf("✓ Agent-toolkit baseline installed into %s\n", wsl.Dist)
+			fmt.Printf("  • Open a shell now: lapel shell (or lapel shell --wt for a new Windows Terminal tab)\n")
+			fmt.Printf("  • Restart Windows Terminal (close all windows) to see the %q profile in the dropdown\n", wsl.Dist)
 			return nil
 		},
 	}
