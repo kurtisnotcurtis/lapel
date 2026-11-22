@@ -109,15 +109,15 @@ TB_E2E=1 TB_E2E_KEEP=1 go test -run TestE2EFreshImportAndSetup -v -timeout 45m .
 <h3 id="throwaway-distro-strategy">Throwaway Distro Strategy <a class="heading-anchor" href="#throwaway-distro-strategy" aria-label="Link to Throwaway Distro Strategy">#</a></h3>
 <p>Tests create a fresh distro (<code>tb-e2e-&lt;timestamp&gt;</code>) and unregister it at the end. This ensures:</p>
 <ul>
-<li><strong>Clean state</strong> — no leftover packages or config from previous runs</li>
-<li><strong>Real WSL behavior</strong> — tests against actual <code>wsl.exe</code>, not mocks</li>
-<li><strong>Fast cleanup</strong> — <code>wsl --unregister</code> removes everything</li>
+<li><strong>Clean state</strong>: no leftover packages or config from previous runs</li>
+<li><strong>Real WSL behavior</strong>: tests against actual <code>wsl.exe</code>, not mocks</li>
+<li><strong>Fast cleanup</strong>: <code>wsl --unregister</code> removes everything</li>
 </ul>
 <h3 id="exec-path-vs-stdin">Exec Path vs Stdin <a class="heading-anchor" href="#exec-path-vs-stdin" aria-label="Link to Exec Path vs Stdin">#</a></h3>
 <p>The test validates both execution modes:</p>
 <ul>
-<li><strong><code>runWslWith()</code></strong> — passes commands via <code>-c &#34;...&#34;</code> (argv path)</li>
-<li><strong>Stdin heredoc</strong> — for commands with complex quoting or <code>$(...)</code> substitution</li>
+<li><strong><code>runWslWith()</code></strong>: passes commands via <code>-c &#34;...&#34;</code> (argv path)</li>
+<li><strong>Stdin heredoc</strong>: for commands with complex quoting or <code>$(...)</code> substitution</li>
 </ul>
 <p>This is critical because WSL 3.0.3.0 mangles command substitutions in argv.</p>
 <h2 id="agent-detection-testing">Agent Detection Testing <a class="heading-anchor" href="#agent-detection-testing" aria-label="Link to Agent Detection Testing">#</a></h2>
@@ -179,9 +179,9 @@ statuses, err := reg.StatusAll(ctx)
 └─────────────────────────────────────┘</code></pre></div>
 <h3 id="key-configuration-points">Key Configuration Points <a class="heading-anchor" href="#key-configuration-points" aria-label="Link to Key Configuration Points">#</a></h3>
 <ol>
-<li><strong>LM Studio listens on <code>0.0.0.0:1234</code></strong> — not just localhost, so WSL can reach it</li>
-<li><strong>WSL uses NAT gateway IP</strong> — typically <code>172.x.x.x</code> or <code>192.168.x.x</code> (changes between reboots)</li>
-<li><strong><code>/etc/resolv.conf</code> lies</strong> — nameserver points to Windows, not the actual gateway</li>
+<li><strong>LM Studio listens on <code>0.0.0.0:1234</code></strong>: not just localhost, so WSL can reach it</li>
+<li><strong>WSL uses NAT gateway IP</strong>: typically <code>172.x.x.x</code> or <code>192.168.x.x</code> (changes between reboots)</li>
+<li><strong><code>/etc/resolv.conf</code> lies</strong>: nameserver points to Windows, not the actual gateway</li>
 </ol>
 <h3 id="testing-from-inside-wsl">Testing from Inside WSL <a class="heading-anchor" href="#testing-from-inside-wsl" aria-label="Link to Testing from Inside WSL">#</a></h3>
 <div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash"># Find the NAT gateway IP

@@ -4,10 +4,10 @@
 
 `lapel` bridges Windows GPU inference providers (LM Studio, Ollama) with coding agents running in WSL2 and VS Code across four pillars:
 
-1. **Provider reachability** — Verify and route WSL-to-Windows inference connections reliably.
-2. **Lean WSL2 environment** — Provision a minimal `lapel` distro so your RAM goes to your model's KV cache, not background desktop services.
-3. **Agent sandboxing** — Scope filesystem access, strip host `PATH` leakage, and report enforcement status honestly.
-4. **Hardware-aware config sync & tuning** — Detect GPU/VRAM specs, recommend model tiers and context windows, and sync configurations across CLI agents and IDE plugins.
+1. **Provider reachability**: Verify and route WSL-to-Windows inference connections reliably.
+2. **Lean WSL2 environment**: Provision a minimal `lapel` distro so your RAM goes to your model's KV cache, not background desktop services.
+3. **Agent sandboxing**: Scope filesystem access, strip host `PATH` leakage, and report enforcement status honestly.
+4. **Hardware-aware config sync & tuning**: Detect GPU/VRAM specs, recommend model tiers and context windows, and sync configurations across CLI agents and IDE plugins.
 
 ---
 
@@ -40,7 +40,7 @@ lapel provider model-list --provider lm-studio
 
 ### 2. Lean environment (`lapel` WSL distro) 🥈
 
-Stock Ubuntu from the Microsoft Store is a general-purpose OS living inside Windows — systemd services, background daemons, full `PATH` with `/mnt/c`, and GUI apps. When your inference server is also running on the same machine, every MB of RAM and percent of CPU that WSL wastes is taken directly from your model.
+Stock Ubuntu from the Microsoft Store is a general-purpose OS living inside Windows, complete with systemd services, background daemons, full `PATH` with `/mnt/c`, and GUI apps. When your inference server is also running on the same machine, every MB of RAM and percent of CPU that WSL wastes is taken directly from your model.
 
 A purpose-built minimal distro is a feature, not a limitation:
 
@@ -48,7 +48,7 @@ A purpose-built minimal distro is a feature, not a limitation:
 - **Idempotent package management**: Installs only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`, `procps`, `iproute2`, etc.)
 - **SSH ready**: Configures key-based authentication automatically
 - **PATH filtering**: Strips `/mnt/c` and `/mnt/d` from `PATH` to prevent Windows host tool leakage
-- **Distinctive shell & Windows Terminal styling**: Applies a branded shell prompt (`ϟ lapel [jail]`), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, custom icon, and color scheme without modifying your user `settings.json`)
+- **Distinctive shell & Windows Terminal styling**: Applies a distinct shell prompt (`ϟ lapel [jail]`), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, custom icon, and color scheme without modifying your user `settings.json`)
 - **Resource-conscious by design**: No GUI apps (`guiApplications=false`), minimal background services, `.wslconfig` cap inspection (`lapel config`)
 
 ```bash
@@ -67,7 +67,7 @@ Filesystem scoping, network rules, and process timeouts so your coding agent can
 - **Filesystem scoping**: Configure `read-write`, `read-only`, or `deny` access to paths
 - **Workspace import modes**: Live `bind` mounts for rapid development or isolated `copy` (`rsync`) snapshots
 - **Process lifecycle & timeouts**: Runs sessions in dedicated process groups (`setsid`) with verified guest-side teardown (`lapel session smoke`) so no orphaned processes survive
-- **Honest enforcement reporting**: Explicitly distinguishes `enforced` vs. `requested` vs. `unsupported` vs. `needs-config` controls (`lapel jail-controls`) — never silently ignored or overclaimed
+- **Honest enforcement reporting**: Explicitly distinguishes `enforced` vs. `requested` vs. `unsupported` vs. `needs-config` controls (`lapel jail-controls`), never silently ignored or overclaimed
 
 ```bash
 lapel apply               # persist desired baseline & import workspace

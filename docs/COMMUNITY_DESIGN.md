@@ -3,9 +3,9 @@
 ## Vision
 
 Build an **opt-in, empirical hardware tuning index** for local AI coding rigs that makes `lapel`:
-- **Immediately useful** — Answers *"Which quant, batch size, and context window actually run best on my GPU + RAM tier without OOMing when WSL2 + VS Code are open?"*
-- **Privacy-first by default** — Strictly opt-in (`LAPEL_COMMUNITY_ENABLED=false` by default), with zero background daemons, zero prompt/code capture, and deterministic SHA-256 hardware hashing.
-- **Compounding** — Every verified benchmark shared via `lapel benchmark --share` improves recommendations for other developers on the same GPU/VRAM tier.
+- **Immediately useful**: Answers *"Which quant, batch size, and context window actually run best on my GPU + RAM tier without OOMing when WSL2 + VS Code are open?"*
+- **Privacy-first by default**: Strictly opt-in (`LAPEL_COMMUNITY_ENABLED=false` by default), with zero background daemons, zero prompt/code capture, and deterministic SHA-256 hardware hashing.
+- **Compounding**: Every verified benchmark shared via `lapel benchmark --share` improves recommendations for other developers on the same GPU/VRAM tier.
 
 ---
 

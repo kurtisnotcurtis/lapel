@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Lean, sandboxed WSL environments for local AI coding agents.</strong><br />
-  Pin your Windows host (LM Studio / Ollama) to a purpose-built WSL container — lean and hardware-tuned.
+  Pin your Windows host (LM Studio / Ollama) to a purpose-built, hardware-tuned WSL container.
 </p>
 
 `lapel` gives you a purpose-built minimal Linux environment optimized for coding agents, guarantees your Windows inference server is reachable from inside WSL, syncs VRAM-tuned model configs to your CLI agents and IDE extensions, and scopes filesystem access so an autonomous agent doesn't eat your Windows files.
@@ -24,7 +24,7 @@ No bloat. No guesswork. Local working inference.
 Running coding agents against local models on Windows often introduces subtle friction between your host, your WSL environment, and your tools:
 
 - **Cross-boundary networking can be brittle**: Inference servers like LM Studio and Ollama typically run on Windows, while CLI agents live in WSL2. Shifting NAT gateway IPs, `resolv.conf` quirks, firewall rules, or mirrored networking differences can quietly break local endpoint reachability across reboots or config changes.
-- **Default WSL configs and general-purpose distros add unnecessary overhead**: Out of the box, WSL's default configuration (unbounded VM memory allocation, GUI app support, Windows `PATH` interop) paired with stock distributions full of background services consumes RAM and clutters the shell—resources you'd rather leave free for your inference server's model weights and KV cache.
+- **Default WSL configs and general-purpose distros add unnecessary overhead**: Out of the box, WSL's default configuration (unbounded VM memory allocation, GUI app support, Windows `PATH` interop) paired with stock distributions full of background services consumes RAM and clutters the shell, taking resources away from your inference server's model weights and KV cache.
 - **Agent and model configs drift easily**: Switching models or trying new tools across **Pi, Claude Code, Kilo Code, Continue, or Cline** often means manually updating endpoints, context windows, and batch settings by trial and error instead of deriving them from your hardware.
 - **Autonomous agents need clear boundaries**: Coding agents execute shell commands on your behalf. Leaving `/mnt/c` wide open to an experimental local model creates a larger blast radius than most workflows need.
 
@@ -36,7 +36,7 @@ Running coding agents against local models on Windows often introduces subtle fr
 
 ### 1. Cross-boundary provider reachability
 
-Your inference server (LM Studio, Ollama) lives on Windows. Your CLI agent lives in WSL. `lapel` resolves the real Windows host gateway IP from `/proc/net/route` and verifies connectivity from the *Linux side*, where it actually matters — classifying connection-refused vs. timeout vs. bind-address errors.
+Your inference server (LM Studio, Ollama) lives on Windows. Your CLI agent lives in WSL. `lapel` resolves the real Windows host gateway IP from `/proc/net/route` and verifies connectivity from the *Linux side*, where it actually matters, classifying connection-refused vs. timeout vs. bind-address errors.
 
 ```bash
 lapel doctor                  # verify WSL, GPU/VRAM, and provider reachability
@@ -47,7 +47,7 @@ lapel provider reachability   # probe Windows inference endpoint from inside WSL
 
 A purpose-built minimal distro with only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`), persisted under `%LOCALAPPDATA%\lapel\distros\lapel`. No GUI apps (`guiApplications=false`), no background desktop bloat, and `PATH` filtered to strip `/mnt/c` host tool leakage. Every MB saved in WSL goes back to your model.
 
-`lapel` also styles your managed distro out of the box—applying a distinctive shell prompt (`ϟ lapel [jail]`), replacing Ubuntu's noisy MOTD with a single-line status banner, and dropping a zero-touch **Windows Terminal JSON Fragment** (setting tab color, custom icon, and color scheme without modifying your user `settings.json`).
+`lapel` also styles your managed distro out of the box: applying a distinctive shell prompt (`ϟ lapel [jail]`), replacing Ubuntu's noisy MOTD with a single-line status banner, and dropping a zero-touch **Windows Terminal JSON Fragment** (setting tab color, custom icon, and color scheme without modifying your user `settings.json`).
 
 ```bash
 lapel provision                    # build the agent-optimized lapel WSL baseline
@@ -57,7 +57,7 @@ lapel env style --preset=amber     # switch WSL prompt & Windows Terminal theme 
 
 ### 3. Agent sandboxing & honest reporting
 
-Filesystem scoping, process timeouts, and non-root execution (`agent` user). `lapel` distinguishes between controls that are actively **enforced**, **requested**, or **unsupported** on your system — never silently ignoring a rule or overclaiming security.
+Filesystem scoping, process timeouts, and non-root execution (`agent` user). `lapel` distinguishes between controls that are actively **enforced**, **requested**, or **unsupported** on your system, never silently ignoring a rule or overclaiming security.
 
 ```bash
 lapel apply                   # apply manifest baseline, workspace mount & jail policies
@@ -82,9 +82,9 @@ doctor → setup → run
               ↘ plan / apply / status (declarative manifest)
 ```
 
-1. **`lapel doctor`** — Check WSL availability, GPU/VRAM specs, model tier recommendations, and provider reachability.
-2. **`lapel setup`** — One command to verify providers, provision the `lapel` WSL distro, mount your workspace, and configure jail policies.
-3. **`lapel run`** — Launch your coding agent (`pi`, `claude-code`, `copilot`) inside the sandboxed WSL environment connected to your Windows inference provider.
+1. **`lapel doctor`**: Check WSL availability, GPU/VRAM specs, model tier recommendations, and provider reachability.
+2. **`lapel setup`**: One command to verify providers, provision the `lapel` WSL distro, mount your workspace, and configure jail policies.
+3. **`lapel run`**: Launch your coding agent (`pi`, `claude-code`, `copilot`) inside the sandboxed WSL environment connected to your Windows inference provider.
 
 For declarative environments and teams: `init`, `plan`, `apply`, and `status` manage your setup via a `lapel.yaml` manifest backed by SQLite drift detection (`.lapel/state.db`).
 
@@ -187,6 +187,6 @@ Community tuning insights (`lapel community`) are designed around **local-first 
 
 ## Where to look next
 
-- **[`AGENTS.md`](AGENTS.md)** — Build/test setup, package layout, and technical gotchas for contributors
-- **[`docs/FEATURES.md`](docs/FEATURES.md)** — Detailed breakdown of the four pillars, CLI commands, and architecture
-- **`lapel --help`** — All available CLI commands and flags
+- **[`AGENTS.md`](AGENTS.md)**: Build/test setup, package layout, and technical gotchas for contributors
+- **[`docs/FEATURES.md`](docs/FEATURES.md)**: Detailed breakdown of the four pillars, CLI commands, and architecture
+- **`lapel --help`**: All available CLI commands and flags

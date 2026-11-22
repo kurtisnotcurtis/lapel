@@ -64,10 +64,10 @@
 <h2 id="overview">Overview <a class="heading-anchor" href="#overview" aria-label="Link to Overview">#</a></h2>
 <p><code>lapel</code> bridges Windows GPU inference providers (LM Studio, Ollama) with coding agents running in WSL2 and VS Code across four pillars:</p>
 <ol>
-<li><strong>Provider reachability</strong> — Verify and route WSL-to-Windows inference connections reliably.</li>
-<li><strong>Lean WSL2 environment</strong> — Provision a minimal <code>lapel</code> distro so your RAM goes to your model&#39;s KV cache, not background desktop services.</li>
-<li><strong>Agent sandboxing</strong> — Scope filesystem access, strip host <code>PATH</code> leakage, and report enforcement status honestly.</li>
-<li><strong>Hardware-aware config sync &amp; tuning</strong> — Detect GPU/VRAM specs, recommend model tiers and context windows, and sync configurations across CLI agents and IDE plugins.</li>
+<li><strong>Provider reachability</strong>: Verify and route WSL-to-Windows inference connections reliably.</li>
+<li><strong>Lean WSL2 environment</strong>: Provision a minimal <code>lapel</code> distro so your RAM goes to your model&#39;s KV cache, not background desktop services.</li>
+<li><strong>Agent sandboxing</strong>: Scope filesystem access, strip host <code>PATH</code> leakage, and report enforcement status honestly.</li>
+<li><strong>Hardware-aware config sync &amp; tuning</strong>: Detect GPU/VRAM specs, recommend model tiers and context windows, and sync configurations across CLI agents and IDE plugins.</li>
 </ol>
 <hr />
 <h3 id="1-provider-reachability">1. Provider reachability 🥇 <a class="heading-anchor" href="#1-provider-reachability" aria-label="Link to 1. Provider reachability 🥇">#</a></h3>
@@ -93,14 +93,14 @@ lapel provider model-list --provider lm-studio</code></pre></div>
 </tbody></table></div>
 <hr />
 <h3 id="2-lean-environment-lapel-wsl-distro">2. Lean environment (<code>lapel</code> WSL distro) 🥈 <a class="heading-anchor" href="#2-lean-environment-lapel-wsl-distro" aria-label="Link to 2. Lean environment (lapel WSL distro) 🥈">#</a></h3>
-<p>Stock Ubuntu from the Microsoft Store is a general-purpose OS living inside Windows — systemd services, background daemons, full <code>PATH</code> with <code>/mnt/c</code>, and GUI apps. When your inference server is also running on the same machine, every MB of RAM and percent of CPU that WSL wastes is taken directly from your model.</p>
+<p>Stock Ubuntu from the Microsoft Store is a general-purpose OS living inside Windows, complete with systemd services, background daemons, full <code>PATH</code> with <code>/mnt/c</code>, and GUI apps. When your inference server is also running on the same machine, every MB of RAM and percent of CPU that WSL wastes is taken directly from your model.</p>
 <p>A purpose-built minimal distro is a feature, not a limitation:</p>
 <ul>
 <li><strong>Automatic provisioning</strong>: Imports a fresh Ubuntu/Debian rootfs into <code>%LOCALAPPDATA%\lapel\distros\lapel</code> with checksum verification</li>
 <li><strong>Idempotent package management</strong>: Installs only what coding agents need (<code>git</code>, <code>curl</code>, <code>tmux</code>, <code>ripgrep</code>, <code>sshd</code>, <code>procps</code>, <code>iproute2</code>, etc.)</li>
 <li><strong>SSH ready</strong>: Configures key-based authentication automatically</li>
 <li><strong>PATH filtering</strong>: Strips <code>/mnt/c</code> and <code>/mnt/d</code> from <code>PATH</code> to prevent Windows host tool leakage</li>
-<li><strong>Distinctive shell &amp; Windows Terminal styling</strong>: Applies a branded shell prompt (<code>ϟ lapel [jail]</code>), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, custom icon, and color scheme without modifying your user <code>settings.json</code>)</li>
+<li><strong>Distinctive shell &amp; Windows Terminal styling</strong>: Applies a distinct shell prompt (<code>ϟ lapel [jail]</code>), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, custom icon, and color scheme without modifying your user <code>settings.json</code>)</li>
 <li><strong>Resource-conscious by design</strong>: No GUI apps (<code>guiApplications=false</code>), minimal background services, <code>.wslconfig</code> cap inspection (<code>lapel config</code>)</li>
 </ul>
 <div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel env status                  # inspect registered distro runtime state
@@ -114,7 +114,7 @@ lapel provision                   # build the agent-optimized lapel WSL baseline
 <li><strong>Filesystem scoping</strong>: Configure <code>read-write</code>, <code>read-only</code>, or <code>deny</code> access to paths</li>
 <li><strong>Workspace import modes</strong>: Live <code>bind</code> mounts for rapid development or isolated <code>copy</code> (<code>rsync</code>) snapshots</li>
 <li><strong>Process lifecycle &amp; timeouts</strong>: Runs sessions in dedicated process groups (<code>setsid</code>) with verified guest-side teardown (<code>lapel session smoke</code>) so no orphaned processes survive</li>
-<li><strong>Honest enforcement reporting</strong>: Explicitly distinguishes <code>enforced</code> vs. <code>requested</code> vs. <code>unsupported</code> vs. <code>needs-config</code> controls (<code>lapel jail-controls</code>) — never silently ignored or overclaimed</li>
+<li><strong>Honest enforcement reporting</strong>: Explicitly distinguishes <code>enforced</code> vs. <code>requested</code> vs. <code>unsupported</code> vs. <code>needs-config</code> controls (<code>lapel jail-controls</code>), never silently ignored or overclaimed</li>
 </ul>
 <div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel apply               # persist desired baseline &amp; import workspace
 lapel status              # check live state and drift against baseline

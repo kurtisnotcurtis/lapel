@@ -43,15 +43,15 @@ The e2e test exercises **14 verification steps**:
 ### Throwaway Distro Strategy
 
 Tests create a fresh distro (`tb-e2e-<timestamp>`) and unregister it at the end. This ensures:
-- **Clean state** — no leftover packages or config from previous runs
-- **Real WSL behavior** — tests against actual `wsl.exe`, not mocks
-- **Fast cleanup** — `wsl --unregister` removes everything
+- **Clean state**: no leftover packages or config from previous runs
+- **Real WSL behavior**: tests against actual `wsl.exe`, not mocks
+- **Fast cleanup**: `wsl --unregister` removes everything
 
 ### Exec Path vs Stdin
 
 The test validates both execution modes:
-- **`runWslWith()`** — passes commands via `-c "..."` (argv path)
-- **Stdin heredoc** — for commands with complex quoting or `$(...)` substitution
+- **`runWslWith()`**: passes commands via `-c "..."` (argv path)
+- **Stdin heredoc**: for commands with complex quoting or `$(...)` substitution
 
 This is critical because WSL 3.0.3.0 mangles command substitutions in argv.
 
@@ -135,9 +135,9 @@ To add a provider:
 
 ### Key Configuration Points
 
-1. **LM Studio listens on `0.0.0.0:1234`** — not just localhost, so WSL can reach it
-2. **WSL uses NAT gateway IP** — typically `172.x.x.x` or `192.168.x.x` (changes between reboots)
-3. **`/etc/resolv.conf` lies** — nameserver points to Windows, not the actual gateway
+1. **LM Studio listens on `0.0.0.0:1234`**: not just localhost, so WSL can reach it
+2. **WSL uses NAT gateway IP**: typically `172.x.x.x` or `192.168.x.x` (changes between reboots)
+3. **`/etc/resolv.conf` lies**: nameserver points to Windows, not the actual gateway
 
 ### Testing from Inside WSL
 
