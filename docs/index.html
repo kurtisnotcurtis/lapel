@@ -364,6 +364,35 @@
       opacity: 0.85;
     }
 
+    .chip-tool {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: color-mix(in srgb, var(--chip-color) 11%, var(--surface));
+      border-color: color-mix(in srgb, var(--chip-color) 36%, var(--border));
+      color: var(--text);
+    }
+
+    .chip-tool svg {
+      width: 13px;
+      height: 13px;
+      flex-shrink: 0;
+    }
+
+    .chip-python { --chip-color: #3776ab; }
+    .chip-node   { --chip-color: #3c873a; }
+    .chip-go     { --chip-color: #00add8; }
+    .chip-cli    { --chip-color: #d97706; }
+    .chip-git    { --chip-color: #f05032; }
+
+    @media (prefers-color-scheme: dark) {
+      .chip-python { --chip-color: #60a5fa; }
+      .chip-node   { --chip-color: #4ade80; }
+      .chip-go     { --chip-color: #22d3ee; }
+      .chip-cli    { --chip-color: #fbbf24; }
+      .chip-git    { --chip-color: #fb7185; }
+    }
+
     .jail-matrix {
       display: flex;
       flex-direction: column;
@@ -465,7 +494,7 @@
       padding: 18px 20px;
     }
 
-    .step code {
+    .step > code {
       font-size: 0.95rem;
       font-weight: 700;
       color: var(--accent);
@@ -478,6 +507,9 @@
     }
 
     #layers code,
+    #lean-distro code,
+    #quickstart code,
+    #integrations code,
     #privacy code {
       color: var(--accent);
     }
@@ -1012,11 +1044,46 @@
             </p>
             <div class="layer-visual">
               <div class="chip-row">
-                <span class="chip chip-ok">uv &middot; Python 3.12</span>
-                <span class="chip chip-ok">fnm &middot; Node LTS</span>
-                <span class="chip chip-ok">golang-go</span>
-                <span class="chip chip-ok">ripgrep &middot; jq &middot; yq</span>
-                <span class="chip chip-ok">git &middot; tmux &middot; sshd</span>
+                <span class="chip chip-tool chip-python">
+                  <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M7.9 1.5c-2.6 0-2.4 1.1-2.4 1.1v1.2h2.5v.4H4.5S2.8 4 2.8 6.6s1.5 2.5 1.5 2.5h.9V7.9s0-1.5 1.5-1.5h2.5s1.4 0 1.4-1.4V2.9s.2-1.4-2.7-1.4Z" fill="#3776ab"/>
+                    <circle cx="6.6" cy="2.9" r="0.55" fill="#ffffff"/>
+                    <path d="M8.1 14.5c2.6 0 2.4-1.1 2.4-1.1v-1.2H8v-.4h3.5s1.7.2 1.7-2.4-1.5-2.5-1.5-2.5h-.9v1.2s0 1.5-1.5 1.5H6.8s-1.4 0-1.4 1.4v2.1s-.2 1.4 2.7 1.4Z" fill="#eab308"/>
+                    <circle cx="9.4" cy="13.1" r="0.55" fill="#ffffff"/>
+                  </svg>
+                  uv &middot; Python 3.12
+                </span>
+                <span class="chip chip-tool chip-node">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="var(--chip-color)" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M8 1.5 13.6 4.75v6.5L8 14.5 2.4 11.25v-6.5L8 1.5Z"/>
+                    <path d="M6.2 10.2V5.8l3.6 4.4V5.8" stroke-linecap="round"/>
+                  </svg>
+                  fnm &middot; Node LTS
+                </span>
+                <span class="chip chip-tool chip-go">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="var(--chip-color)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M1.2 6h2.2M.8 8.2h2.4M1.6 10.4h1.8"/>
+                    <path d="M9.6 6.2a2.6 2.6 0 1 0 .2 3.4H8"/>
+                    <circle cx="13" cy="8.2" r="2.1"/>
+                  </svg>
+                  golang-go
+                </span>
+                <span class="chip chip-tool chip-cli">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="var(--chip-color)" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+                    <circle cx="7" cy="7" r="4.3"/>
+                    <path d="M10.3 10.3 14 14"/>
+                  </svg>
+                  ripgrep &middot; jq &middot; yq
+                </span>
+                <span class="chip chip-tool chip-git">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="var(--chip-color)" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                    <circle cx="4.5" cy="3.5" r="1.6"/>
+                    <circle cx="4.5" cy="12.5" r="1.6"/>
+                    <circle cx="11.5" cy="6" r="1.6"/>
+                    <path d="M4.5 5.1v5.8M11.5 7.6c0 2.3-2.4 3.3-7 3.3"/>
+                  </svg>
+                  git &middot; tmux &middot; sshd
+                </span>
               </div>
               <div class="chip-row">
                 <span class="chip chip-muted">snapd</span>
