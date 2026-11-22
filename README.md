@@ -47,7 +47,7 @@ lapel provider reachability   # probe Windows inference endpoint from inside WSL
 
 A purpose-built minimal distro with only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`), persisted under `%LOCALAPPDATA%\lapel\distros\lapel`. No GUI apps (`guiApplications=false`), no background desktop bloat, and `PATH` filtered to strip `/mnt/c` host tool leakage. Every MB saved in WSL goes back to your model.
 
-`lapel` also styles your managed distro out of the box—applying a distinctive shell prompt (`⚡ lapel [jail]`), replacing Ubuntu's noisy MOTD with a single-line status banner, and dropping a zero-touch **Windows Terminal JSON Fragment** (setting tab color, icon, and color scheme without modifying your user `settings.json`).
+`lapel` also styles your managed distro out of the box—applying a distinctive shell prompt (`ϟ lapel [jail]`), replacing Ubuntu's noisy MOTD with a single-line status banner, and dropping a zero-touch **Windows Terminal JSON Fragment** (setting tab color, custom icon, and color scheme without modifying your user `settings.json`).
 
 ```bash
 lapel provision                    # build the agent-optimized lapel WSL baseline

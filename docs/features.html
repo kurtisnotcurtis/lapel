@@ -100,7 +100,7 @@ lapel provider model-list --provider lm-studio</code></pre></div>
 <li><strong>Idempotent package management</strong>: Installs only what coding agents need (<code>git</code>, <code>curl</code>, <code>tmux</code>, <code>ripgrep</code>, <code>sshd</code>, <code>procps</code>, <code>iproute2</code>, etc.)</li>
 <li><strong>SSH ready</strong>: Configures key-based authentication automatically</li>
 <li><strong>PATH filtering</strong>: Strips <code>/mnt/c</code> and <code>/mnt/d</code> from <code>PATH</code> to prevent Windows host tool leakage</li>
-<li><strong>Distinctive shell &amp; Windows Terminal styling</strong>: Applies a branded shell prompt (<code>⚡ lapel [jail]</code>), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, icon, and color scheme without modifying your user <code>settings.json</code>)</li>
+<li><strong>Distinctive shell &amp; Windows Terminal styling</strong>: Applies a branded shell prompt (<code>ϟ lapel [jail]</code>), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, custom icon, and color scheme without modifying your user <code>settings.json</code>)</li>
 <li><strong>Resource-conscious by design</strong>: No GUI apps (<code>guiApplications=false</code>), minimal background services, <code>.wslconfig</code> cap inspection (<code>lapel config</code>)</li>
 </ul>
 <div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel env status                  # inspect registered distro runtime state

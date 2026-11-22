@@ -71,7 +71,7 @@ func TestBuildShellStyleScript(t *testing.T) {
 		"_LAPEL_BADGE='dev-rig'",
 		"_LAPEL_DISTRO='lapel'",
 		`export PS1=`,
-		`⚡ ${_lapel_label}`,
+		`ϟ ${_lapel_label}`,
 		`LAPEL_BANNER_SHOWN`,
 		`Linux-only PATH`,
 	} {
@@ -122,7 +122,7 @@ func TestApplyWindowsTerminalFragmentLifecycle(t *testing.T) {
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		t.Fatalf("unmarshaling fragment JSON: %v", err)
 	}
-	if len(parsed.Profiles) != 1 || parsed.Profiles[0].TabColor != "#F59E0B" || parsed.Profiles[0].Name != "⚡ lapel" {
+	if len(parsed.Profiles) != 1 || parsed.Profiles[0].TabColor != "#F59E0B" || parsed.Profiles[0].Name != "lapel" {
 		t.Errorf("unexpected fragment profiles: %+v", parsed.Profiles)
 	}
 	if got, want := parsed.Profiles[0].Updates, wslDynamicProfileGUID("lapel"); got == "" || got != want {

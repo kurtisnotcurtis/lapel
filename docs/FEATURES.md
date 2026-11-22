@@ -48,7 +48,7 @@ A purpose-built minimal distro is a feature, not a limitation:
 - **Idempotent package management**: Installs only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`, `procps`, `iproute2`, etc.)
 - **SSH ready**: Configures key-based authentication automatically
 - **PATH filtering**: Strips `/mnt/c` and `/mnt/d` from `PATH` to prevent Windows host tool leakage
-- **Distinctive shell & Windows Terminal styling**: Applies a branded shell prompt (`⚡ lapel [jail]`), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, icon, and color scheme without modifying your user `settings.json`)
+- **Distinctive shell & Windows Terminal styling**: Applies a branded shell prompt (`ϟ lapel [jail]`), suppresses noisy stock Ubuntu MOTD spam in favor of a clean one-line status banner, and writes a Windows Terminal JSON Fragment (setting tab color, custom icon, and color scheme without modifying your user `settings.json`)
 - **Resource-conscious by design**: No GUI apps (`guiApplications=false`), minimal background services, `.wslconfig` cap inspection (`lapel config`)
 
 ```bash
