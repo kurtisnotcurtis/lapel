@@ -160,11 +160,11 @@ fi
 
 	switch style.Preset {
 	case PresetAmber:
-		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;30;43m\] ϟ ${_lapel_label} \[\e[0m\]${_lapel_jail_tag} \[\e[1;33m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;33m\]▸\[\e[0m\] "` + "\n")
+		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;30;43m\] ⚡ ${_lapel_label} \[\e[0m\]${_lapel_jail_tag} \[\e[1;33m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;33m\]▸\[\e[0m\] "` + "\n")
 	case PresetMinimal:
 		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;36m\][${_lapel_label}]\[\e[0m\]${_lapel_jail_tag} \u@\h:\w\$ "` + "\n")
 	default: // PresetLapelDark
-		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;30;46m\] ϟ ${_lapel_label} \[\e[0m\]${_lapel_jail_tag} \[\e[1;36m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;36m\]▸\[\e[0m\] "` + "\n")
+		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;30;46m\] ⚡ ${_lapel_label} \[\e[0m\]${_lapel_jail_tag} \[\e[1;36m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;36m\]▸\[\e[0m\] "` + "\n")
 	}
 
 	if style.Banner {
@@ -175,7 +175,7 @@ if [ -z "${LAPEL_BANNER_SHOWN:-}" ]; then
   if [ -n "${JAIL_TIMEOUT:-}" ]; then
     _lapel_mode="${_lapel_mode} · jailed (${JAIL_TIMEOUT}s timeout)"
   fi
-  printf '\033[1;%smϟ lapel\033[0m \033[2m· %%s · user: %%s · Linux-only PATH\033[0m\n' "${_lapel_mode}" "${USER:-$(id -un 2>/dev/null)}"
+  printf '\033[1;%sm⚡ lapel\033[0m \033[2m· %%s · user: %%s · Linux-only PATH\033[0m\n' "${_lapel_mode}" "${USER:-$(id -un 2>/dev/null)}"
 fi
 `, style.AccentAnsiCode)
 	}
@@ -257,7 +257,7 @@ type wtScheme struct {
 // fragment file that registers the Lapel color scheme and updates the managed
 // WSL distribution's dynamic profile without touching the user's settings.json.
 func BuildWindowsTerminalFragment(style ResolvedStyle) ([]byte, error) {
-	return buildWindowsTerminalFragmentWithTargets(style, "ϟ", []string{wslDynamicProfileGUID(style.Distro)})
+	return buildWindowsTerminalFragmentWithTargets(style, "⚡", []string{wslDynamicProfileGUID(style.Distro)})
 }
 
 func buildWindowsTerminalFragmentWithIcon(style ResolvedStyle, icon string) ([]byte, error) {
@@ -269,7 +269,7 @@ func buildWindowsTerminalFragmentWithTargets(style ResolvedStyle, icon string, t
 		return nil, nil
 	}
 	if strings.TrimSpace(icon) == "" {
-		icon = "ϟ"
+		icon = "⚡"
 	}
 
 	scheme := wtScheme{

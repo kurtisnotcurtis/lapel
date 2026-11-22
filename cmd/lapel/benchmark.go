@@ -109,7 +109,7 @@ the verified report when --share is passed (requires LAPEL_COMMUNITY_ENABLED=tru
 			}
 
 			fmt.Println("\n┌──────────────────────────────────────────────────────────────┐")
-			fmt.Printf("│ ϟ LAPEL RIG BENCHMARK CARD                                   │\n")
+			fmt.Printf("│ ⚡ LAPEL RIG BENCHMARK CARD                                  │\n")
 			fmt.Println("├──────────────────────────────────────────────────────────────┤")
 			fmt.Printf("│ Hardware Hash : %-44s │\n", hash)
 			fmt.Printf("│ GPU / VRAM    : %-44s │\n", truncateStr(gpuLabel, 44))

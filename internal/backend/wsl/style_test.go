@@ -71,7 +71,7 @@ func TestBuildShellStyleScript(t *testing.T) {
 		"_LAPEL_BADGE='dev-rig'",
 		"_LAPEL_DISTRO='lapel'",
 		`export PS1=`,
-		`ϟ ${_lapel_label}`,
+		`⚡ ${_lapel_label}`,
 		`LAPEL_BANNER_SHOWN`,
 		`Linux-only PATH`,
 	} {

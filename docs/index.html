@@ -798,9 +798,6 @@
     .t-ok { color: #4ade80; font-weight: 600; }
     .t-dir { color: #60a5fa; font-weight: 600; }
     .t-jail { color: #fbbf24; font-weight: 700; }
-    .t-koppa {
-      font-family: Consolas, "DejaVu Sans Mono", Menlo, ui-monospace, monospace;
-    }
 
     .wt-lapel[data-preset="lapel-dark"] .t-pill {
       background: #22d3ee;
@@ -1209,22 +1206,22 @@
                   </div>
                   <div class="wt-controls"><span class="wt-dot"></span><span class="wt-dot"></span><span class="wt-dot"></span></div>
                 </div>
-                <div class="wt-body"><span class="t-accent"><span class="t-koppa">ϟ</span> lapel</span> <span class="t-dim">&middot; WSL (lapel) &middot; user: agent &middot; Linux-only PATH &middot; jailed (300s timeout)</span>
+                <div class="wt-body"><span class="t-accent">⚡ lapel</span> <span class="t-dim">&middot; WSL (lapel) &middot; user: agent &middot; Linux-only PATH &middot; jailed (300s timeout)</span>
 
-<span class="t-pill"> <span class="t-koppa">ϟ</span> lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> free -m
+<span class="t-pill"> ⚡ lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> free -m
                total        used        free      shared  buff/cache   available
 Mem:            <span class="t-ok">4096</span>         <span class="t-ok">138</span>        3708           2         250        3840
 Swap:              <span class="t-ok">0</span>           0           0
 <span class="t-dim"># 4 GB hard cap via .wslconfig (138 MB idle, 0 swap; 28 GB left for host + LLM)</span>
 
-<span class="t-pill"> <span class="t-koppa">ϟ</span> lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> nproc &amp;&amp; ps -eo pid= | wc -l
+<span class="t-pill"> ⚡ lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> nproc &amp;&amp; ps -eo pid= | wc -l
 <span class="t-ok">4</span>   <span class="t-dim"># vCPUs capped via .wslconfig (12 host threads free for inference &amp; UI)</span>
 <span class="t-ok">4</span>   <span class="t-dim"># running processes: init, sshd, bash, ps (guiApplications=false, no WSLg)</span>
 
-<span class="t-pill"> <span class="t-koppa">ϟ</span> lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> tr : '\n' &lt;&lt;&lt; "$PATH" | wc -l
+<span class="t-pill"> ⚡ lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> tr : '\n' &lt;&lt;&lt; "$PATH" | wc -l
 <span class="t-ok">8</span>   <span class="t-dim"># Linux-only PATH (pre-pinned uv, fnm, go; 0 /mnt/c Windows dirs)</span>
 
-<span class="t-pill"> <span class="t-koppa">ϟ</span> lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> which powershell.exe; groups
+<span class="t-pill"> ⚡ lapel </span> <span class="t-jail">[jail]</span> <span class="t-accent">agent</span>:<span class="t-dir">~/project</span> <span class="t-accent">&blacktriangleright;</span> which powershell.exe; groups
 <span class="t-ok">(not found)</span>
 <span class="t-ok">agent</span>  <span class="t-dim"># unprivileged user, no sudo, host Windows binaries stripped</span></div>
               </div>
