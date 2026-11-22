@@ -38,11 +38,15 @@ func isRoot(ctx context.Context, dist string) bool {
 // pre-evaluated or stripped before bash ever sees them (verified 2026-11),
 // which silently corrupts scripts; stdin passes through intact.
 func runScript(ctx context.Context, dist, script string, asRoot bool) (string, error) {
+	return runScriptStream(ctx, dist, script, asRoot, nil)
+}
+
+func runScriptStream(ctx context.Context, dist, script string, asRoot bool, stream io.Writer) (string, error) {
 	args := []string{"-d", dist}
 	if asRoot {
 		args = append(args, "sudo", "-n")
 	}
-	return runWslWithInput(ctx, append(args, "bash"), script)
+	return runWslWithInputStream(ctx, append(args, "bash"), script, stream)
 }
 
 // runRoot runs a shell script inside the named distro with root privileges. If
@@ -51,10 +55,15 @@ func runScript(ctx context.Context, dist, script string, asRoot bool) (string, e
 // NOPASSWD drop-in at import time). On pre-existing distros without
 // passwordless sudo this fails with a hint.
 func runRoot(ctx context.Context, dist, script string) (string, error) {
+	return runRootStream(ctx, dist, script, nil)
+}
+
+// runRootStream behaves like runRoot while streaming sanitized output to stream.
+func runRootStream(ctx context.Context, dist, script string, stream io.Writer) (string, error) {
 	if isRoot(ctx, dist) {
-		return runScript(ctx, dist, script, false)
+		return runScriptStream(ctx, dist, script, false, stream)
 	}
-	out, err := runScript(ctx, dist, script, true)
+	out, err := runScriptStream(ctx, dist, script, true, stream)
 	if err != nil {
 		return out, fmt.Errorf("%w (if this is a pre-existing distro, ensure its default user has passwordless sudo)", err)
 	}

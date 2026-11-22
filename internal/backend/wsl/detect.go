@@ -7,8 +7,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"lapel/internal/domain"
 )
@@ -48,18 +51,37 @@ func runWslWith(ctx context.Context, cmdArgs []string) (string, error) {
 // silently break scripts (verified 2026-11) — while stdin passes through
 // intact.
 func runWslWithInput(ctx context.Context, cmdArgs []string, stdinText string) (string, error) {
+	return runWslWithInputStream(ctx, cmdArgs, stdinText, nil)
+}
+
+// runWslWithInputStream behaves like runWslWithInput and optionally streams
+// sanitized, line-prefixed stdout/stderr output to stream as the command runs.
+func runWslWithInputStream(ctx context.Context, cmdArgs []string, stdinText string, stream io.Writer) (string, error) {
+	restoreConsole := preserveConsoleMode()
+	defer restoreConsole()
+
 	// NOTE: go1.27 has a bug where spreading a variadic parameter directly as an
 	// argument inside another multi-argument call (`exec.CommandContext(..., wslArgs(args)...)`)
 	// fails to type-check ("cannot use args as string value"). Assigning the helper
 	// result to a local first avoids the nested-spread expression.
 	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
 	var out, errb bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errb
+	var pw *linePrefixWriter
+	if stream != nil {
+		pw = newLinePrefixWriter(stream, "    ")
+		cmd.Stdout = io.MultiWriter(&out, pw)
+		cmd.Stderr = io.MultiWriter(&errb, pw)
+	} else {
+		cmd.Stdout = &out
+		cmd.Stderr = &errb
+	}
 	if stdinText != "" {
 		cmd.Stdin = strings.NewReader(stdinText)
 	}
 	err := cmd.Run()
+	if pw != nil {
+		pw.Flush()
+	}
 	if err != nil {
 		// Include stderr: wsl.exe and in-distro commands report failures there
 		// (e.g. `useradd: Permission denied`), and a stdout-only message can be
@@ -68,6 +90,66 @@ func runWslWithInput(ctx context.Context, cmdArgs []string, stdinText string) (s
 		return sanitize(strings.TrimSpace(out.String())), fmt.Errorf("%s: %w", detail, err)
 	}
 	return sanitize(out.String()), nil
+}
+
+// linePrefixWriter buffers streamed command output, strips UTF-16LE NUL bytes
+// and carriage returns, and writes complete lines prefixed with prefix.
+type linePrefixWriter struct {
+	mu     sync.Mutex
+	w      io.Writer
+	prefix string
+	eol    string
+	buf    []byte
+}
+
+func newLinePrefixWriter(w io.Writer, prefix string) *linePrefixWriter {
+	eol := "\n"
+	if f, ok := w.(*os.File); ok {
+		if fi, err := f.Stat(); err == nil && (fi.Mode()&os.ModeCharDevice) != 0 {
+			// Use CRLF on interactive terminals so lines return to column 0 even
+			// while wsl.exe temporarily mutates console newline handling.
+			eol = "\r\n"
+		}
+	}
+	return &linePrefixWriter{w: w, prefix: prefix, eol: eol}
+}
+
+func (p *linePrefixWriter) Write(b []byte) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, ch := range b {
+		if ch == 0 || ch == '\r' {
+			continue
+		}
+		if ch == '\n' {
+			p.emitLineLocked()
+			continue
+		}
+		p.buf = append(p.buf, ch)
+	}
+	return len(b), nil
+}
+
+// Flush writes any remaining buffered bytes as a final line.
+func (p *linePrefixWriter) Flush() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.buf) > 0 {
+		p.emitLineLocked()
+	}
+}
+
+func (p *linePrefixWriter) emitLineLocked() {
+	line := string(p.buf)
+	p.buf = p.buf[:0]
+	if strings.TrimSpace(line) == "" {
+		return
+	}
+	eol := p.eol
+	if eol == "" {
+		eol = "\n"
+	}
+	fmt.Fprintf(p.w, "%s%s%s", p.prefix, line, eol)
 }
 
 // sanitize removes NUL bytes that wsl.exe emits with UTF-16LE encoding when its

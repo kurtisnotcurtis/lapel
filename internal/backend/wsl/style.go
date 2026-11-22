@@ -2,11 +2,14 @@ package wsl
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf16"
 
 	"lapel/internal/domain"
 )
@@ -186,13 +189,43 @@ type wtFragment struct {
 }
 
 type wtProfile struct {
-	Name              string `json:"name"`
+	Updates           string `json:"updates,omitempty"`
+	Name              string `json:"name,omitempty"`
 	Commandline       string `json:"commandline,omitempty"`
 	TabTitle          string `json:"tabTitle,omitempty"`
 	TabColor          string `json:"tabColor,omitempty"`
 	ColorScheme       string `json:"colorScheme,omitempty"`
 	Icon              string `json:"icon,omitempty"`
 	StartingDirectory string `json:"startingDirectory,omitempty"`
+}
+
+// wtNamespaceGUID is Windows Terminal's TERMINAL_PROFILE_NAMESPACE_GUID
+// ({2bde4a90-d05f-401c-9492-e40884ead1d8}) in RFC 4122 big-endian byte order.
+var wtNamespaceGUID = [16]byte{
+	0x2b, 0xde, 0x4a, 0x90,
+	0xd0, 0x5f,
+	0x40, 0x1c,
+	0x94, 0x92,
+	0xe4, 0x08, 0x84, 0xea, 0xd1, 0xd8,
+}
+
+// wslDynamicProfileGUID computes the deterministic GUID that Windows Terminal's
+// Windows.Terminal.Wsl generator assigns to a WSL distro (UUIDv5 over
+// wtNamespaceGUID + UTF-16LE distro name).
+func wslDynamicProfileGUID(distro string) string {
+	units := utf16.Encode([]rune(distro))
+	h := sha1.New()
+	h.Write(wtNamespaceGUID[:])
+	var buf [2]byte
+	for _, u := range units {
+		binary.LittleEndian.PutUint16(buf[:], u)
+		h.Write(buf[:])
+	}
+	sum := h.Sum(nil)
+	sum[6] = (sum[6] & 0x0f) | 0x50 // version 5
+	sum[8] = (sum[8] & 0x3f) | 0x80 // RFC 4122 variant
+	return fmt.Sprintf("{%08x-%04x-%04x-%04x-%012x}",
+		sum[0:4], sum[4:6], sum[6:8], sum[8:10], sum[10:16])
 }
 
 type wtScheme struct {
@@ -220,11 +253,18 @@ type wtScheme struct {
 }
 
 // BuildWindowsTerminalFragment builds the JSON payload for a Windows Terminal
-// fragment file that registers the Lapel color scheme and a dedicated profile
-// for the managed WSL distribution without touching the user's settings.json.
+// fragment file that registers the Lapel color scheme and updates the managed
+// WSL distribution's dynamic profile without touching the user's settings.json.
 func BuildWindowsTerminalFragment(style ResolvedStyle) ([]byte, error) {
+	return buildWindowsTerminalFragmentWithIcon(style, "⚡")
+}
+
+func buildWindowsTerminalFragmentWithIcon(style ResolvedStyle, icon string) ([]byte, error) {
 	if !style.Enabled || !style.WindowsTerminal {
 		return nil, nil
+	}
+	if strings.TrimSpace(icon) == "" {
+		icon = "⚡"
 	}
 
 	scheme := wtScheme{
@@ -259,12 +299,12 @@ func BuildWindowsTerminalFragment(style ResolvedStyle) ([]byte, error) {
 		Schemes: []wtScheme{scheme},
 		Profiles: []wtProfile{
 			{
+				Updates:           wslDynamicProfileGUID(style.Distro),
 				Name:              profileTitle,
-				Commandline:       fmt.Sprintf("wsl.exe -d %s", style.Distro),
 				TabTitle:          profileTitle,
 				TabColor:          style.TabColor,
 				ColorScheme:       style.SchemeName,
-				Icon:              "⚡",
+				Icon:              icon,
 				StartingDirectory: "~",
 			},
 		},
@@ -305,19 +345,36 @@ func ApplyWindowsTerminalFragment(distro string, spec domain.EnvironmentStyle) (
 
 func applyWindowsTerminalFragmentAt(fragPath, distro string, spec domain.EnvironmentStyle) (string, error) {
 	style := ResolveStyle(distro, spec)
+	iconPath := filepath.Join(filepath.Dir(fragPath), "lapel-icon.png")
 	if !style.Enabled || !style.WindowsTerminal {
 		if err := os.Remove(fragPath); err != nil && !os.IsNotExist(err) {
 			return "", fmt.Errorf("removing Windows Terminal fragment %s: %w", fragPath, err)
 		}
+		if err := os.Remove(iconPath); err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("removing Windows Terminal icon %s: %w", iconPath, err)
+		}
 		return "", nil
 	}
 
-	data, err := BuildWindowsTerminalFragment(style)
-	if err != nil {
-		return "", fmt.Errorf("building Windows Terminal fragment: %w", err)
-	}
 	if err := os.MkdirAll(filepath.Dir(fragPath), 0o755); err != nil {
 		return "", fmt.Errorf("creating Windows Terminal fragment dir: %w", err)
+	}
+
+	iconColor := style.CursorColor
+	if style.TabColor != "" && style.Preset != PresetLapelDark {
+		iconColor = style.TabColor
+	}
+	iconPNG, err := RenderWindowsTerminalIconPNG(iconColor)
+	if err != nil {
+		return "", fmt.Errorf("rendering Windows Terminal icon: %w", err)
+	}
+	if err := os.WriteFile(iconPath, iconPNG, 0o644); err != nil {
+		return "", fmt.Errorf("writing Windows Terminal icon %s: %w", iconPath, err)
+	}
+
+	data, err := buildWindowsTerminalFragmentWithIcon(style, iconPath)
+	if err != nil {
+		return "", fmt.Errorf("building Windows Terminal fragment: %w", err)
 	}
 	if err := os.WriteFile(fragPath, append(data, '\n'), 0o644); err != nil {
 		return "", fmt.Errorf("writing Windows Terminal fragment %s: %w", fragPath, err)

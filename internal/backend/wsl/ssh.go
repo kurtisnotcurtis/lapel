@@ -32,6 +32,7 @@ func EnsureSSHAccess(ctx context.Context, dist, user, pubKeyPath string) (bool, 
 	raw, err := os.ReadFile(pubKeyPath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			fmt.Printf("    skipped SSH key setup (no public key at %s)\n", pubKeyPath)
 			return false, nil // no key material on the host; skip silently
 		}
 		return false, fmt.Errorf("reading public key %s: %w", pubKeyPath, err)

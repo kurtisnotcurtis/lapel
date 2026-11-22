@@ -475,16 +475,17 @@ func wslConfigCmd() *cobra.Command {
 // only packages that are not already present.
 func provisionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "provision",
-		Short:  "Install the agent-toolkit baseline into the distro (idempotent)",
+		Use:   "provision",
+		Short: "Install the agent-toolkit baseline into the distro (idempotent)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			fmt.Printf("=== lapel provision (%s) ===\n", wsl.Dist)
 			b := &wsl.DistBackend{}
 			spec := domain.Environment{Name: wsl.Dist}
 			if err := b.Provision(ctx, spec); err != nil {
 				return fmt.Errorf("provisioning: %w", err)
 			}
-			fmt.Printf("agent-toolkit baseline installed into %s\n", wsl.Dist)
+			fmt.Printf("✓ Agent-toolkit baseline installed into %s\n", wsl.Dist)
 			return nil
 		},
 	}

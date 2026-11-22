@@ -1,6 +1,8 @@
 package wsl
 
 import (
+	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -132,5 +134,100 @@ func TestDefaultProvisionOptionsMergesExtraPackages(t *testing.T) {
 	}
 	if gitCount != 1 {
 		t.Errorf("expected git to appear once (deduplicated), got %d", gitCount)
+	}
+}
+
+func TestAgentToolkitPackagesUsesValidUbuntuPackages(t *testing.T) {
+	hasYQ := false
+	for _, pkg := range AgentToolkitPackages {
+		if pkg == "libyaml-tools" {
+			t.Errorf("AgentToolkitPackages contains non-existent Ubuntu package %q", pkg)
+		}
+		if pkg == "yq" {
+			hasYQ = true
+		}
+	}
+	if !hasYQ {
+		t.Errorf("expected AgentToolkitPackages to include yq")
+	}
+}
+
+func TestEnsureUbuntuUniverseScriptTargetsDEB822AndLegacy(t *testing.T) {
+	script := ensureUbuntuUniverseScript()
+	for _, want := range []string{
+		"/etc/apt/sources.list.d/ubuntu.sources",
+		"/etc/apt/sources.list",
+		"universe",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("ensureUbuntuUniverseScript missing %q", want)
+		}
+	}
+}
+
+func TestLinePrefixWriterStripsNULsAndPrefixesLines(t *testing.T) {
+	var out bytes.Buffer
+	pw := newLinePrefixWriter(&out, "    ")
+	_, _ = pw.Write([]byte("R\x00eading package lists...\r\n\nBuilding tree\x00"))
+	pw.Flush()
+
+	want := "    Reading package lists...\n    Building tree\n"
+	if out.String() != want {
+		t.Errorf("linePrefixWriter output = %q, want %q", out.String(), want)
+	}
+}
+
+func TestEnsureDNSResolvScriptHandlesSymlinkAndStub(t *testing.T) {
+	script := ensureDNSResolvScript()
+	for _, want := range []string{
+		"-L /etc/resolv.conf",
+		`127\.0\.0\.53`,
+		"rm -f /etc/resolv.conf",
+		"nameserver 8.8.8.8",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("ensureDNSResolvScript missing %q", want)
+		}
+	}
+}
+
+func TestUvInstallScriptUsesUnmanagedInstallEnv(t *testing.T) {
+	script := uvInstallScript()
+	if strings.Contains(script, "--install-dir") {
+		t.Errorf("uvInstallScript should not pass --install-dir to uv install.sh")
+	}
+	for _, want := range []string{
+		"UV_UNMANAGED_INSTALL=/usr/local/uv/bin",
+		"UV_PYTHON_INSTALL_DIR=/usr/local/uv/python",
+		`PATH="/usr/local/uv/bin:$PATH"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("uvInstallScript missing %q", want)
+		}
+	}
+}
+
+func TestDownloadProgressReaderReportsMilestones(t *testing.T) {
+	const total = 100
+	data := bytes.Repeat([]byte("a"), total)
+	var out bytes.Buffer
+	pr := newDownloadProgressReader(bytes.NewReader(data), total, &out)
+	buf := make([]byte, 25)
+	for {
+		_, err := pr.Read(buf)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+	}
+	pr.Finish()
+
+	got := out.String()
+	for _, want := range []string{"downloaded 20%", "downloaded 40%", "downloaded 60%", "downloaded 80%", "download complete"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in progress output:\n%s", want, got)
+		}
 	}
 }

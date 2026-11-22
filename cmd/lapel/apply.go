@@ -83,11 +83,11 @@ func applyCmd() *cobra.Command {
 			if !skipProvision {
 				b := &wsl.DistBackend{}
 				if det, err := b.Detect(ctx); err == nil && det.Available {
-					fmt.Printf("Ensuring environment %q is provisioned... ", reconcile.EnvName(m))
+					fmt.Printf("Ensuring environment %q is provisioned...\n", reconcile.EnvName(m))
 					if err := b.Provision(ctx, m.EnvSpec()); err != nil {
 						fmt.Printf("warning (%v)\n", err)
 					} else {
-						fmt.Printf("OK\n")
+						fmt.Printf("  ✓ Environment %q provisioned\n", reconcile.EnvName(m))
 					}
 				}
 			}

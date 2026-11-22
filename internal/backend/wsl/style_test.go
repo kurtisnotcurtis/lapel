@@ -1,7 +1,9 @@
 package wsl
 
 import (
+	"bytes"
 	"encoding/json"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,11 +125,29 @@ func TestApplyWindowsTerminalFragmentLifecycle(t *testing.T) {
 	if len(parsed.Profiles) != 1 || parsed.Profiles[0].TabColor != "#F59E0B" || parsed.Profiles[0].Name != "⚡ lapel" {
 		t.Errorf("unexpected fragment profiles: %+v", parsed.Profiles)
 	}
+	if got, want := parsed.Profiles[0].Updates, wslDynamicProfileGUID("lapel"); got == "" || got != want {
+		t.Errorf("fragment updates GUID = %q, want %q", got, want)
+	}
+	wantIcon := filepath.Join(filepath.Dir(fragPath), "lapel-icon.png")
+	if parsed.Profiles[0].Icon != wantIcon {
+		t.Errorf("fragment icon = %q, want %q", parsed.Profiles[0].Icon, wantIcon)
+	}
+	iconBytes, err := os.ReadFile(wantIcon)
+	if err != nil {
+		t.Fatalf("reading generated icon PNG: %v", err)
+	}
+	img, err := png.Decode(bytes.NewReader(iconBytes))
+	if err != nil {
+		t.Fatalf("decoding icon PNG: %v", err)
+	}
+	if b := img.Bounds(); b.Dx() != 64 || b.Dy() != 64 {
+		t.Errorf("icon PNG dimensions = %dx%d, want 64x64", b.Dx(), b.Dy())
+	}
 	if len(parsed.Schemes) != 1 || parsed.Schemes[0].Name != "Lapel Amber" {
 		t.Errorf("unexpected fragment schemes: %+v", parsed.Schemes)
 	}
 
-	// 2. Disable via preset=none and verify fragment file is removed.
+	// 2. Disable via preset=none and verify fragment & icon files are removed.
 	written, err = applyWindowsTerminalFragmentAt(fragPath, "lapel", domain.EnvironmentStyle{
 		Preset: PresetNone,
 	})
@@ -139,5 +159,15 @@ func TestApplyWindowsTerminalFragmentLifecycle(t *testing.T) {
 	}
 	if _, err := os.Stat(fragPath); !os.IsNotExist(err) {
 		t.Errorf("expected fragment file to be deleted, stat err = %v", err)
+	}
+	if _, err := os.Stat(wantIcon); !os.IsNotExist(err) {
+		t.Errorf("expected icon file to be deleted, stat err = %v", err)
+	}
+}
+
+func TestWSLDynamicProfileGUID(t *testing.T) {
+	// Golden vector from Windows Terminal's Windows.Terminal.Wsl generator for "Ubuntu".
+	if got, want := wslDynamicProfileGUID("Ubuntu"), "{2c4de342-38b7-51cf-b940-2309a097f518}"; got != want {
+		t.Errorf("wslDynamicProfileGUID(Ubuntu) = %q, want %q", got, want)
 	}
 }

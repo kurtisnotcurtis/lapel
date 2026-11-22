@@ -55,8 +55,8 @@ var AgentToolkitPackages = []string{
 	// without relying on transitive apt dependencies.
 	"python3", "python3-pip",
 	// JSON/YAML processing — critical for API responses, config files,
-	// and agent tool outputs. libyaml-tools provides yq via apt.
-	"jq", "libyaml-tools",
+	// and agent tool outputs. yq lives in Ubuntu's universe component.
+	"jq", "yq",
 	// Build tools — agents compile C/Rust code from repos that need it
 	// (e.g. go build with CGO, rustc from source).
 	"make", "build-essential",
@@ -294,6 +294,7 @@ func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 	// directly fails with Wsl/ERROR_INVALID_NAME (verified on 3.0.3.0) — so
 	// download the rootfs first, then import from disk. The archive is removed
 	// afterwards; the VHDX container stays in installLoc.
+	fmt.Printf("  • Downloading %s rootfs from %s...\n", opts.Base, url)
 	archive, err := downloadRootfs(ctx, url, installLoc)
 	if err != nil {
 		// Clean up the import directory on download failure to avoid orphan containers
@@ -303,6 +304,7 @@ func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 	defer os.Remove(archive)
 	// --import is a GLOBAL flag: it cannot be combined with -d (WSL rejects the
 	// combination), so route through runWslGlobal.
+	fmt.Printf("  • Importing %q into %s (this may take 15-30s)...\n", opts.Name, installLoc)
 	if _, err := runWslGlobal(ctx, "--import", opts.Name, installLoc, archive); err != nil {
 		// Clean up the import directory on import failure to avoid orphan containers
 		os.RemoveAll(installLoc)
@@ -319,6 +321,7 @@ func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 		defaultUser = os.Getenv("USER")
 	}
 	if defaultUser != "" {
+		fmt.Printf("  • Configuring user %q, /etc/wsl.conf, and DNS in %q...\n", defaultUser, opts.Name)
 		if err := setupFreshDistro(ctx, opts.Name, defaultUser); err != nil {
 			return fmt.Errorf("setting up fresh distro %s: %w", opts.Name, err)
 		}
@@ -383,11 +386,70 @@ func downloadRootfs(ctx context.Context, url string, destDir string) (string, er
 		return "", err
 	}
 	defer f.Close()
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	pr := newDownloadProgressReader(resp.Body, resp.ContentLength, os.Stdout)
+	if _, err := io.Copy(f, pr); err != nil {
 		os.Remove(dest)
 		return "", err
 	}
+	pr.Finish()
 	return dest, nil
+}
+
+type downloadProgressReader struct {
+	r         io.Reader
+	total     int64
+	read      int64
+	nextPct   int64
+	nextBytes int64
+	start     time.Time
+	out       io.Writer
+}
+
+func newDownloadProgressReader(r io.Reader, total int64, out io.Writer) *downloadProgressReader {
+	return &downloadProgressReader{
+		r:         r,
+		total:     total,
+		nextPct:   20,
+		nextBytes: 25 * 1024 * 1024,
+		start:     time.Now(),
+		out:       out,
+	}
+}
+
+func (p *downloadProgressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.read += int64(n)
+		p.maybeReport()
+	}
+	return n, err
+}
+
+func (p *downloadProgressReader) maybeReport() {
+	if p.out == nil {
+		return
+	}
+	const mb = 1024 * 1024
+	if p.total > 0 {
+		pct := (p.read * 100) / p.total
+		for p.nextPct <= 80 && pct >= p.nextPct {
+			fmt.Fprintf(p.out, "    downloaded %d%% (%.1f / %.1f MB)\n", p.nextPct, float64(p.read)/mb, float64(p.total)/mb)
+			p.nextPct += 20
+		}
+		return
+	}
+	if p.read >= p.nextBytes {
+		fmt.Fprintf(p.out, "    downloaded %.1f MB...\n", float64(p.read)/mb)
+		p.nextBytes += 25 * mb
+	}
+}
+
+func (p *downloadProgressReader) Finish() {
+	if p.out == nil {
+		return
+	}
+	const mb = 1024 * 1024
+	fmt.Fprintf(p.out, "    download complete (%.1f MB in %s)\n", float64(p.read)/mb, time.Since(p.start).Round(time.Millisecond))
 }
 
 // setupFreshDistro prepares a freshly imported cloud rootfs for agent use. It
@@ -439,6 +501,10 @@ generateResolvConf = false
 default = %s%s
 WSLCONF
 # Use Google's public DNS for reliable resolution (WSL's NAT gateway 10.255.255.254
+# can be flaky). Remove any /etc/resolv.conf symlink first: Ubuntu 24.04 cloud
+# images symlink it into /run/systemd/resolve/, which systemd-resolved wipes on
+# reboot when generateResolvConf = false.
+rm -f /etc/resolv.conf
 cat > /etc/resolv.conf <<'RESOLV'
 nameserver 8.8.8.8
 nameserver 8.8.4.4
@@ -485,37 +551,86 @@ func validateUsername(user string) error {
 	return nil
 }
 
+// ensureDNSResolvScript returns a shell snippet that replaces a dangling or
+// systemd-resolved stub /etc/resolv.conf (127.0.0.53 with no upstream under
+// generateResolvConf=false) with a persistent static /etc/resolv.conf.
+func ensureDNSResolvScript() string {
+	return `if [ -L /etc/resolv.conf ] || ! grep -q '^nameserver ' /etc/resolv.conf 2>/dev/null || grep -q '^nameserver 127\.0\.0\.53' /etc/resolv.conf 2>/dev/null; then
+  rm -f /etc/resolv.conf
+  cat > /etc/resolv.conf <<'RESOLV'
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+RESOLV
+fi`
+}
+
+// ensureUbuntuUniverseScript returns a shell snippet that enables the Ubuntu
+// `universe` apt component if running on Ubuntu and `universe` is missing from
+// DEB822 (/etc/apt/sources.list.d/ubuntu.sources) or legacy (/etc/apt/sources.list).
+// Official Ubuntu cloud rootfs tarballs often ship with only `main` enabled.
+func ensureUbuntuUniverseScript() string {
+	return `if grep -qi '^ID=ubuntu' /etc/os-release 2>/dev/null; then
+  if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+    awk '/^Components:/ && $0 !~ /(^|[ \t])universe([ \t]|$)/ { $0 = $0 " universe" } { print }' /etc/apt/sources.list.d/ubuntu.sources > /etc/apt/sources.list.d/ubuntu.sources.tmp && mv /etc/apt/sources.list.d/ubuntu.sources.tmp /etc/apt/sources.list.d/ubuntu.sources
+  fi
+  if [ -f /etc/apt/sources.list ]; then
+    awk '/^deb[ \t]+/ && $0 !~ /^deb-src/ && $0 ~ /[ \t]main([ \t]|$)/ && $0 !~ /[ \t]universe([ \t]|$)/ { $0 = $0 " universe" } { print }' /etc/apt/sources.list > /etc/apt/sources.list.tmp && mv /etc/apt/sources.list.tmp /etc/apt/sources.list
+  fi
+fi`
+}
+
 // InstallAgentToolkit installs the agent-toolkit baseline packages into an
-// existing distro idempotently. It runs `apt-get update` once, then installs
-// only the packages that are not already present (queried via dpkg-query), so
-// repeating it without manifest changes does not reinstall everything.
+// existing distro idempotently. It checks installed packages first via
+// dpkg-query; only when packages are missing does it repair resolv.conf if
+// needed, enable Ubuntu's universe component, run `apt-get update` with strict
+// error checking, and install the missing subset.
 func InstallAgentToolkit(ctx context.Context, dist string, packages []string) error {
 	if len(packages) == 0 {
 		packages = AgentToolkitPackages
 	}
-	if _, err := runRoot(ctx, dist, "apt-get -y update"); err != nil {
-		return fmt.Errorf("apt-get update: %w", err)
-	}
+	fmt.Printf("  • Checking agent-toolkit packages in %q...\n", dist)
 	missing, pkgErr := missingPackages(ctx, dist, packages)
 	// If dpkg-query failed, we conservatively reinstall everything to ensure
 	// the toolkit is present. The error is logged but doesn't block installation.
 	if pkgErr != nil {
-		fmt.Printf("[WARN] package query failed (%v), reinstalling all %d packages\n", pkgErr, len(packages))
+		fmt.Printf("  [WARN] package query failed (%v), checking/installing all %d packages\n", pkgErr, len(packages))
 	}
 	if len(missing) == 0 {
+		fmt.Printf("  ✓ All %d requested package(s) already installed\n", len(packages))
 		return nil
 	}
+
+	fmt.Printf("  • Updating apt package lists in %q...\n", dist)
+	updateScript := "set -e\n" + ensureDNSResolvScript() + "\n" + ensureUbuntuUniverseScript() + "\nDEBIAN_FRONTEND=noninteractive apt-get -y -o APT::Update::Error-Mode=any update"
+	if _, err := runRootStream(ctx, dist, updateScript, os.Stdout); err != nil {
+		return fmt.Errorf("apt-get update: %w", err)
+	}
+
 	// Quote each package name so apt-get never interprets shell metacharacters
 	// in an untrusted manifest entry (spec 8).
 	var quoted []string
 	for _, p := range missing {
 		quoted = append(quoted, shellQuote(p))
 	}
-	script := "set -e\napt-get -y install " + strings.Join(quoted, " ")
-	if _, err := runRoot(ctx, dist, script); err != nil {
+	fmt.Printf("  • Installing %d missing package(s) in %q: %s\n", len(missing), dist, strings.Join(missing, ", "))
+	script := "set -e\nDEBIAN_FRONTEND=noninteractive apt-get -y install " + strings.Join(quoted, " ")
+	if _, err := runRootStream(ctx, dist, script, os.Stdout); err != nil {
 		return fmt.Errorf("apt-get install %v: %w", missing, err)
 	}
 	return nil
+}
+
+func uvInstallScript() string {
+	return `set -e
+if ! command -v curl >/dev/null 2>&1; then apt-get -y install curl; fi
+mkdir -p /usr/local/uv/bin /usr/local/uv/python
+curl -fsSL https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL=/usr/local/uv/bin sh
+chmod -R a+rX /usr/local/uv
+cat > /etc/profile.d/uv.sh <<'UVSH'
+export UV_CACHE_DIR=/tmp/uv-cache
+export UV_PYTHON_INSTALL_DIR=/usr/local/uv/python
+export PATH="/usr/local/uv/bin:$PATH"
+UVSH`
 }
 
 // installUv ensures uv (Rust-based Python package manager + runner) is installed
@@ -523,34 +638,27 @@ func InstallAgentToolkit(ctx context.Context, dist string, packages []string) er
 // the download; otherwise it runs the official installer as root, then pins uv to
 // a stable version so `uv` works for agents out of the box.
 func installUv(ctx context.Context, dist string) error {
+	fmt.Printf("  • Ensuring uv and Python 3.12 in %q...\n", dist)
 	// Check whether uv is already installed (root-owned binary in /usr/local/uv).
 	check := `test -x /usr/local/uv/bin/uv && echo ok`
 	out, err := runRoot(ctx, dist, check)
 	if err != nil || !strings.Contains(out, "ok") {
-		// Official uv installer: downloads the latest release tarball and
-		// extracts to /usr/local/uv. We use the root path so any user can
-		// pick it up from PATH.
-		script := `set -e
-if ! command -v curl >/dev/null 2>&1; then apt-get -y install curl; fi
-curl -fsSL https://astral.sh/uv/install.sh | bash -s -- --install-dir /usr/local/uv
-# uv's installer writes to ~/.bashrc of the calling user, but we want it
-# system-wide so every agent session picks up ` + "`export PATH=\"/usr/local/uv/bin:$PATH\"`" + `. The
-# per-user init is harmless; we just make sure /usr/local/uv/bin is on PATH.
-cat > /etc/profile.d/uv.sh <<'UVSH'
-export UV_CACHE_DIR=/tmp/uv-cache
-export PATH="/usr/local/uv/bin:$PATH"
-UVSH`
-		if _, err := runRoot(ctx, dist, script); err != nil {
+		fmt.Printf("    installing uv...\n")
+		if _, err := runRootStream(ctx, dist, uvInstallScript(), os.Stdout); err != nil {
 			return fmt.Errorf("installing uv: %w", err)
 		}
 	}
 	// Pin a stable Python version for agents. `uv python install 3.12` installs
 	// CPython 3.12 as a standalone binary (no system Python dependency), so it
 	// works even on minimal distros without /usr/bin/python3.
+	fmt.Printf("    ensuring Python 3.12 via uv...\n")
 	useScript := `set -e
+export UV_CACHE_DIR=/tmp/uv-cache
+export UV_PYTHON_INSTALL_DIR=/usr/local/uv/python
 export PATH="/usr/local/uv/bin:$PATH"
-uv python install 3.12`
-	if _, err := runRoot(ctx, dist, useScript); err != nil {
+uv python install 3.12
+chmod -R a+rX /usr/local/uv`
+	if _, err := runRootStream(ctx, dist, useScript, os.Stdout); err != nil {
 		return fmt.Errorf("pinning Python 3.12 via uv: %w", err)
 	}
 	return nil
@@ -561,10 +669,12 @@ uv python install 3.12`
 // download; otherwise it runs the official installer as root, then pins Node LTS
 // as the active version so `node` works for agents out of the box.
 func installFnmAndNode(ctx context.Context, dist string) error {
+	fmt.Printf("  • Ensuring fnm and Node.js LTS in %q...\n", dist)
 	// Check whether fnm is already installed (root-owned binary in /usr/local/fnm).
 	check := `test -x /usr/local/fnm/fnm && echo ok`
 	out, err := runRoot(ctx, dist, check)
 	if err != nil || !strings.Contains(out, "ok") {
+		fmt.Printf("    installing fnm...\n")
 		// Official fnm installer: downloads the latest release tarball and
 		// extracts to /usr/local/fnm. We use the root path so any user can
 		// pick it up from PATH.
@@ -581,19 +691,20 @@ export FNM_DIR=/usr/local/fnm
 export PATH="/usr/local/fnm:$PATH"
 eval "$(/usr/local/fnm/fnm env)" 2>/dev/null || true
 FNMSH`
-		if _, err := runRoot(ctx, dist, script); err != nil {
+		if _, err := runRootStream(ctx, dist, script, os.Stdout); err != nil {
 			return fmt.Errorf("installing fnm: %w", err)
 		}
 	}
 	// Pin Node LTS. `fnm install --lts` auto-marks the installed version as
 	// default + lts-latest, so a single install call is enough — no separate
 	// `use` step needed.
+	fmt.Printf("    ensuring Node.js LTS via fnm...\n")
 	useScript := `set -e
 export FNM_DIR=/usr/local/fnm
 export PATH="/usr/local/fnm:$PATH"
 eval "$(/usr/local/fnm/fnm env)" 2>/dev/null || true
 fnm install --lts`
-	if _, err := runRoot(ctx, dist, useScript); err != nil {
+	if _, err := runRootStream(ctx, dist, useScript, os.Stdout); err != nil {
 		return fmt.Errorf("pinning Node LTS via fnm: %w", err)
 	}
 	return nil
@@ -603,6 +714,7 @@ fnm install --lts`
 // given options. When the distro already exists it installs packages only when
 // opts.EnsurePackages is set (default true), keeping existing-distro calls cheap.
 func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions) error {
+	fmt.Printf("  • Checking WSL distro %q...\n", opts.Name)
 	names, err := ListDistros(ctx)
 	if err != nil {
 		return fmt.Errorf("listing distros: %w", err)
@@ -615,11 +727,15 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 		}
 	}
 	if !exists {
+		fmt.Printf("  • Distro %q not found — creating minimal environment...\n", opts.Name)
 		if err := ImportMinimalDistro(ctx, opts); err != nil {
 			return err
 		}
 	} else if !opts.EnsurePackages {
+		fmt.Printf("  • Distro %q already exists (skipping package check)\n", opts.Name)
 		return nil // existing distro; opt out of package maintenance
+	} else {
+		fmt.Printf("  • Distro %q already exists\n", opts.Name)
 	}
 	if err := InstallAgentToolkit(ctx, opts.Name, opts.Packages); err != nil {
 		return err
@@ -636,6 +752,7 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 	if user == "" {
 		user = os.Getenv("USER")
 	}
+	fmt.Printf("  • Configuring SSH access for %q...\n", user)
 	keyInstalled, err := EnsureSSHAccess(ctx, opts.Name, user, opts.SSHPublicKeyPath)
 	if err != nil {
 		return fmt.Errorf("ensuring ssh access: %w", err)
@@ -643,10 +760,12 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 	if keyInstalled {
 		// WSL's localhost forwarding takes a few seconds to settle after boot,
 		// so VerifySSH retries for up to 30s before declaring failure.
+		fmt.Printf("  • Verifying SSH connectivity for %q...\n", user)
 		if err := VerifySSH(ctx, opts.Name, user, 30*time.Second); err != nil {
 			return err
 		}
 	}
+	fmt.Printf("  • Applying shell prompt and Windows Terminal style...\n")
 	if err := ApplyDistroStyle(ctx, opts.Name, user, opts.Style); err != nil {
 		return fmt.Errorf("applying distro style: %w", err)
 	}
