@@ -1,34 +1,38 @@
 :root {
-  --bg: #f8f9fa;
+  --bg: #fbf8f4;
   --surface: #ffffff;
-  --surface-alt: #f1f3f5;
-  --border: #dee2e6;
-  --text: #1c1e21;
-  --text-muted: #5c6470;
-  --accent: #2f7d4f;
-  --accent-soft: rgba(47, 125, 79, 0.1);
-  --logo-stroke: #3a3a3a;
-  --code-bg: #161b22;
-  --code-text: #e6edf3;
-  --inline-code-bg: rgba(27, 31, 36, 0.06);
+  --surface-alt: #f4ede4;
+  --border: #e5d8c8;
+  --text: #231a13;
+  --text-muted: #6b5849;
+  --accent: #b45309;
+  --accent-soft: rgba(180, 83, 9, 0.1);
+  --btn-bg: #c2410c;
+  --logo-stroke: #ea580c;
+  --logo-fill: rgba(234, 88, 12, 0.16);
+  --code-bg: #18120e;
+  --code-text: #f5ede4;
+  --inline-code-bg: rgba(180, 83, 9, 0.09);
   --radius: 10px;
   --max-w: 1160px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d1117;
-    --surface: #161b22;
-    --surface-alt: #1c2128;
-    --border: #30363d;
-    --text: #e6edf3;
-    --text-muted: #8b949e;
-    --accent: #4caf73;
-    --accent-soft: rgba(76, 175, 115, 0.14);
-    --logo-stroke: #e6edf3;
-    --code-bg: #090c10;
-    --code-text: #e6edf3;
-    --inline-code-bg: rgba(110, 118, 129, 0.24);
+    --bg: #14100d;
+    --surface: #1c1612;
+    --surface-alt: #251d17;
+    --border: #382b22;
+    --text: #f5ede4;
+    --text-muted: #b4a293;
+    --accent: #f59e0b;
+    --accent-soft: rgba(245, 158, 11, 0.14);
+    --btn-bg: #c2410c;
+    --logo-stroke: #fb923c;
+    --logo-fill: rgba(251, 146, 60, 0.22);
+    --code-bg: #0e0b09;
+    --code-text: #f5ede4;
+    --inline-code-bg: rgba(245, 158, 11, 0.13);
   }
 }
 
@@ -85,6 +89,7 @@ header {
   width: 28px;
   height: 28px;
   stroke: var(--logo-stroke);
+  fill: var(--logo-fill);
 }
 
 .nav-links {
@@ -183,12 +188,12 @@ footer {
   gap: 18px;
 }
 
-/* YAML syntax highlighting */
-.yk { color: #7ee787; }
-.ys { color: #a5d6ff; }
-.yn { color: #79c0ff; }
-.yc { color: #8b949e; font-style: italic; }
-.yp { color: #8b949e; }
+/* YAML & bash syntax highlighting */
+.yk { color: #fbbf24; }
+.ys { color: #38bdf8; }
+.yn { color: #fb923c; }
+.yc { color: #9c8978; font-style: italic; }
+.yp { color: #b4a293; }
 
 /* Documentation pages */
 .doc-shell {
@@ -389,12 +394,14 @@ footer {
 .doc-article code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.88em;
+  color: var(--accent);
   background: var(--inline-code-bg);
   padding: 2px 6px;
   border-radius: 5px;
 }
 
 .doc-article pre code {
+  color: inherit;
   background: transparent;
   padding: 0;
   border-radius: 0;

@@ -52,7 +52,7 @@ A purpose-built minimal distro with only what coding agents need (`git`, `curl`,
 ```bash
 lapel provision                    # build the agent-optimized lapel WSL baseline
 lapel env status                   # inspect runtime state
-lapel env style --preset=amber     # switch WSL prompt & Windows Terminal theme preset
+lapel env style --preset=violet    # switch WSL prompt & Windows Terminal theme preset
 ```
 
 ### 3. Agent sandboxing & honest reporting
@@ -134,7 +134,7 @@ environment:
     - fd-find
     - tree
   style:
-    preset: lapel-dark   # "lapel-dark" (default) | "amber" | "minimal" | "none"
+    preset: lapel-dark   # "lapel-dark" (default) | "violet" | "minimal" | "none"
     windowsTerminal: true
 
 provider:

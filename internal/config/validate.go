@@ -100,9 +100,9 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 		check(strings.TrimSpace(m.Environment.Version) != "", "environment.distribution=import requires environment.version (e.g. 24.04)")
 	}
 	switch strings.ToLower(strings.TrimSpace(m.Environment.Style.Preset)) {
-	case "", "lapel-dark", "amber", "minimal", "none":
+	case "", "lapel-dark", "violet", "minimal", "none":
 	default:
-		problems = append(problems, fmt.Sprintf("environment.style.preset must be lapel-dark|amber|minimal|none (got %q)", m.Environment.Style.Preset))
+		problems = append(problems, fmt.Sprintf("environment.style.preset must be lapel-dark|violet|minimal|none (got %q)", m.Environment.Style.Preset))
 	}
 	if tc := strings.TrimSpace(m.Environment.Style.TabColor); tc != "" {
 		check(hexColorRe.MatchString(tc), "environment.style.tabColor must be a #RRGGBB hex color (got %q)", m.Environment.Style.TabColor)

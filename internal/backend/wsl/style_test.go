@@ -30,21 +30,21 @@ func TestResolveStylePresetsAndOverrides(t *testing.T) {
 		t.Errorf("unexpected default colors: tab=%s bg=%s", def.TabColor, def.Background)
 	}
 
-	// Amber preset with custom badge and color overrides.
-	amber := ResolveStyle("lapel", domain.EnvironmentStyle{
-		Preset:     PresetAmber,
+	// Violet preset with custom badge and color overrides.
+	violet := ResolveStyle("lapel", domain.EnvironmentStyle{
+		Preset:     PresetViolet,
 		Badge:      "ai-sandbox",
-		TabColor:   "#D97706",
-		Background: "#1C1917",
+		TabColor:   "#7C3AED",
+		Background: "#141022",
 		Banner:     boolPtr(false),
 	})
-	if amber.Preset != PresetAmber || amber.SchemeName != "Lapel Amber" {
-		t.Errorf("unexpected amber preset resolution: %+v", amber)
+	if violet.Preset != PresetViolet || violet.SchemeName != "Lapel Violet" {
+		t.Errorf("unexpected violet preset resolution: %+v", violet)
 	}
-	if amber.Badge != "ai-sandbox" || amber.TabColor != "#D97706" || amber.Background != "#1C1917" {
-		t.Errorf("overrides not applied: %+v", amber)
+	if violet.Badge != "ai-sandbox" || violet.TabColor != "#7C3AED" || violet.Background != "#141022" {
+		t.Errorf("overrides not applied: %+v", violet)
 	}
-	if amber.Banner {
+	if violet.Banner {
 		t.Error("expected Banner=false override to be respected")
 	}
 
@@ -101,11 +101,11 @@ func TestApplyWindowsTerminalFragmentLifecycle(t *testing.T) {
 	tmp := t.TempDir()
 	fragPath := filepath.Join(tmp, "Fragments", wtFragmentDirName, "lapel.json")
 
-	// 1. Write fragment for amber preset.
+	// 1. Write fragment for violet preset.
 	written, err := applyWindowsTerminalFragmentAt(fragPath, "lapel", domain.EnvironmentStyle{
-		Preset:   PresetAmber,
+		Preset:   PresetViolet,
 		Badge:    "lapel",
-		TabColor: "#F59E0B",
+		TabColor: "#8B5CF6",
 	})
 	if err != nil {
 		t.Fatalf("applyWindowsTerminalFragmentAt: %v", err)
@@ -122,7 +122,7 @@ func TestApplyWindowsTerminalFragmentLifecycle(t *testing.T) {
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		t.Fatalf("unmarshaling fragment JSON: %v", err)
 	}
-	if len(parsed.Profiles) != 1 || parsed.Profiles[0].TabColor != "#F59E0B" || parsed.Profiles[0].TabTitle != "lapel" {
+	if len(parsed.Profiles) != 1 || parsed.Profiles[0].TabColor != "#8B5CF6" || parsed.Profiles[0].TabTitle != "lapel" {
 		t.Errorf("unexpected fragment profiles: %+v", parsed.Profiles)
 	}
 	if parsed.Profiles[0].Name != "" {
@@ -146,7 +146,7 @@ func TestApplyWindowsTerminalFragmentLifecycle(t *testing.T) {
 	if b := img.Bounds(); b.Dx() != 64 || b.Dy() != 64 {
 		t.Errorf("icon PNG dimensions = %dx%d, want 64x64", b.Dx(), b.Dy())
 	}
-	if len(parsed.Schemes) != 1 || parsed.Schemes[0].Name != "Lapel Amber" {
+	if len(parsed.Schemes) != 1 || parsed.Schemes[0].Name != "Lapel Violet" {
 		t.Errorf("unexpected fragment schemes: %+v", parsed.Schemes)
 	}
 

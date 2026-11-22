@@ -356,7 +356,7 @@ func envStyleCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&preset, "preset", "", "style preset (lapel-dark, amber, minimal, none)")
+	cmd.Flags().StringVar(&preset, "preset", "", "style preset (lapel-dark, violet, minimal, none)")
 	cmd.Flags().StringVar(&badge, "badge", "", "custom prompt badge text (defaults to distro name)")
 	cmd.Flags().StringVar(&tabColor, "tab-color", "", "Windows Terminal tab hex color (#RRGGBB)")
 	cmd.Flags().StringVar(&background, "background", "", "Windows Terminal background hex color (#RRGGBB)")

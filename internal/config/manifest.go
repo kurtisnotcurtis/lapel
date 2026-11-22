@@ -40,7 +40,7 @@ type Manifest struct {
 // EnvironmentStyle configures the visual shell prompt, welcome banner, and
 // Windows Terminal fragment for the managed WSL distro.
 type EnvironmentStyle struct {
-	Preset          string `yaml:"preset" json:"preset,omitempty"`                   // "lapel-dark" | "amber" | "minimal" | "none"
+	Preset          string `yaml:"preset" json:"preset,omitempty"`                   // "lapel-dark" | "violet" | "minimal" | "none"
 	Badge           string `yaml:"badge" json:"badge,omitempty"`                     // custom prompt badge text
 	Banner          *bool  `yaml:"banner" json:"banner,omitempty"`                   // show one-line welcome banner
 	TabColor        string `yaml:"tabColor" json:"tabColor,omitempty"`               // hex color (#RRGGBB)

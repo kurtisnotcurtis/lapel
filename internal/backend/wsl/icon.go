@@ -13,12 +13,11 @@ import (
 type vec2 struct{ x, y float64 }
 
 // RenderWindowsTerminalIconPNG renders a 64x64 transparent antialiased PNG of
-// the lapel-bolt-tucked logo tinted to hexColor (e.g. "#0EA5E9" or "#F59E0B").
+// the lapel-bolt-tucked logo tinted to hexColor (e.g. "#FB923C").
 // Windows Terminal profile icons require raster formats (.png/.ico) rather than
-// SVG, so generating this in pure Go keeps lapel.exe self-contained and matches
-// any preset or custom --tab-color override.
+// SVG, so generating this in pure Go keeps lapel.exe self-contained.
 func RenderWindowsTerminalIconPNG(hexColor string) ([]byte, error) {
-	r, g, b := parseHexColor(hexColor, 0x38, 0xBD, 0xF8)
+	r, g, b := parseHexColor(hexColor, 0xFB, 0x92, 0x3C)
 
 	// Single closed lapel-bolt tucked silhouette sampled into a smooth polyline
 	// in 0..100 viewBox coordinates.

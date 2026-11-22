@@ -40,7 +40,7 @@ type Agent struct {
 // EnvironmentStyle configures the shell prompt, welcome banner, and Windows
 // Terminal appearance for a managed environment.
 type EnvironmentStyle struct {
-	Preset          string `json:"preset,omitempty"`          // "lapel-dark" | "amber" | "minimal" | "none"
+	Preset          string `json:"preset,omitempty"`          // "lapel-dark" | "violet" | "minimal" | "none"
 	Badge           string `json:"badge,omitempty"`           // custom prompt badge text (defaults to distro name)
 	Banner          *bool  `json:"banner,omitempty"`          // show one-line login banner
 	TabColor        string `json:"tabColor,omitempty"`        // Windows Terminal tab hex color (#RRGGBB)

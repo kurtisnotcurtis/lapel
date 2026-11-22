@@ -89,7 +89,7 @@ environment:
   # Extra apt packages beyond the agent-toolkit minimum.
   packages: []
   # Visual prompt, welcome banner, and Windows Terminal profile styling.
-  # Presets: "lapel-dark" (default), "amber", "minimal", "none".
+  # Presets: "lapel-dark" (default), "violet", "minimal", "none".
   style:
     preset: lapel-dark
     badge: ""

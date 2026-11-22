@@ -33,6 +33,7 @@
       display: block;
       flex-shrink: 0;
       stroke: var(--logo-stroke);
+      fill: var(--logo-fill);
     }
 
     .badge {
@@ -85,8 +86,8 @@
     .btn:hover { text-decoration: none; border-color: var(--text-muted); transform: translateY(-1px); }
 
     .btn-primary {
-      background: var(--accent);
-      border-color: var(--accent);
+      background: var(--btn-bg);
+      border-color: var(--btn-bg);
       color: #ffffff;
     }
     .btn-primary:hover { border-color: var(--accent); opacity: 0.92; }
@@ -271,7 +272,7 @@
       padding: 3px 9px;
       border-radius: 6px;
       background: var(--code-bg);
-      color: #7ee787;
+      color: #fbbf24;
       border: 1px solid var(--border);
       white-space: nowrap;
     }
@@ -774,23 +775,23 @@
       height: 14px;
       vertical-align: -2px;
       margin-right: 5px;
-      stroke: #38bdf8;
-      fill: rgba(56, 189, 248, 0.22);
+      stroke: var(--logo-stroke);
+      fill: var(--logo-fill);
     }
 
-    .wt-lapel[data-preset="amber"] .wt-tab-icon {
-      stroke: #f59e0b;
-      fill: rgba(245, 158, 11, 0.22);
+    .wt-lapel .wt-tab-icon {
+      stroke: #fb923c;
+      fill: rgba(251, 146, 60, 0.22);
     }
 
-    .wt-lapel[data-preset="amber"] .wt-tab-active {
-      background: #18120b;
-      border-top-color: #f59e0b;
-      box-shadow: inset 0 10px 18px -10px rgba(245, 158, 11, 0.38);
+    .wt-lapel[data-preset="violet"] .wt-tab-active {
+      background: #141022;
+      border-top-color: #8b5cf6;
+      box-shadow: inset 0 10px 18px -10px rgba(139, 92, 246, 0.42);
     }
 
-    .wt-lapel[data-preset="amber"] .wt-body {
-      background: #18120b;
+    .wt-lapel[data-preset="violet"] .wt-body {
+      background: #141022;
     }
 
     .t-dim { color: #7d8590; }
@@ -811,15 +812,15 @@
       font-weight: 700;
     }
 
-    .wt-lapel[data-preset="amber"] .t-pill {
-      background: #f59e0b;
-      color: #18120b;
+    .wt-lapel[data-preset="violet"] .t-pill {
+      background: #7c3aed;
+      color: #f8fafc;
       font-weight: 700;
       padding: 1px 6px;
       border-radius: 3px;
     }
-    .wt-lapel[data-preset="amber"] .t-accent {
-      color: #fbbf24;
+    .wt-lapel[data-preset="violet"] .t-accent {
+      color: #c084fc;
       font-weight: 700;
     }
 
@@ -908,7 +909,7 @@
   <header>
     <div class="container nav">
       <a class="brand" href="#">
-        <svg viewBox="0 0 100 100" fill="none" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 100 100" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M 37,8 C 48.5,9.5 59.5,12.5 69,17 L 72,34 L 55.5,41 L 70,47 C 58,65 44,79 28,92 C 34.5,71 39.2,53 39.5,39.5 C 39.6,33 38.4,28 36.4,24.2 L 46,21.2 C 44.5,15.8 41.5,11.2 37,8 Z" />
         </svg>
         <span>lapel</span>
@@ -928,7 +929,7 @@
     <section class="hero" style="border-top: none;">
       <div class="container">
         <div class="hero-brand" aria-label="lapel">
-          <svg class="hero-logo" viewBox="0 0 100 100" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <svg class="hero-logo" viewBox="0 0 100 100" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M 37,8 C 48.5,9.5 59.5,12.5 69,17 L 72,34 L 55.5,41 L 70,47 C 58,65 44,79 28,92 C 34.5,71 39.2,53 39.5,39.5 C 39.6,33 38.4,28 36.4,24.2 L 46,21.2 C 44.5,15.8 41.5,11.2 37,8 Z" />
           </svg>
           <span>lapel</span>
@@ -1189,8 +1190,8 @@
             <button type="button" class="preset-btn active" data-set-preset="lapel-dark">
               <span class="swatch" style="background: #0ea5e9;"></span>lapel-dark
             </button>
-            <button type="button" class="preset-btn" data-set-preset="amber">
-              <span class="swatch" style="background: #f59e0b;"></span>amber
+            <button type="button" class="preset-btn" data-set-preset="violet">
+              <span class="swatch" style="background: #8b5cf6;"></span>violet
             </button>
           </div>
         </div>
@@ -1422,7 +1423,7 @@ Swap:           <span class="t-warn">8192</span>           0        8192
     <span class="yp">-</span> <span class="ys">fd-find</span>
     <span class="yp">-</span> <span class="ys">tree</span>
   <span class="yk">style</span><span class="yp">:</span>
-    <span class="yk">preset</span><span class="yp">:</span> <span class="ys">lapel-dark</span>   <span class="yc"># "lapel-dark" | "amber" | "minimal" | "none"</span>
+    <span class="yk">preset</span><span class="yp">:</span> <span class="ys">lapel-dark</span>   <span class="yc"># "lapel-dark" | "violet" | "minimal" | "none"</span>
     <span class="yk">windowsTerminal</span><span class="yp">:</span> <span class="yn">true</span>
 
 <span class="yk">provider</span><span class="yp">:</span>

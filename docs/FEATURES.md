@@ -53,7 +53,7 @@ A purpose-built minimal distro is a feature, not a limitation:
 
 ```bash
 lapel env status                  # inspect registered distro runtime state
-lapel env style --preset=amber    # switch WSL prompt & Windows Terminal theme preset
+lapel env style --preset=violet   # switch WSL prompt & Windows Terminal theme preset
 lapel env systemd off --restart   # disable systemd and start sshd via lightweight [boot] hook
 lapel config                      # inspect host .wslconfig memory/CPU caps and networking warnings
 lapel provision                   # build the agent-optimized lapel WSL baseline (idempotent)
@@ -133,7 +133,7 @@ environment:
     - fd-find
     - tree
   style:
-    preset: lapel-dark  # "lapel-dark" (default) | "amber" | "minimal" | "none"
+    preset: lapel-dark  # "lapel-dark" (default) | "violet" | "minimal" | "none"
     badge: ""           # optional custom prompt badge (defaults to distro name)
     banner: true        # show one-line status banner on interactive shell login
     tabColor: ""        # optional hex override for Windows Terminal tab (#RRGGBB)

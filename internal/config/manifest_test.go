@@ -114,7 +114,7 @@ func TestValidateCatchesProblems(t *testing.T) {
 		{"bad importMode", func(m *Manifest) { m.Workspace.ImportMode = "symlink" }, true},
 		{"bad network", func(m *Manifest) { m.Jail.Network = "airgap" }, true},
 		{"bad style preset", func(m *Manifest) { m.Environment.Style.Preset = "neon" }, true},
-		{"valid style preset amber", func(m *Manifest) { m.Environment.Style.Preset = "amber" }, false},
+		{"valid style preset violet", func(m *Manifest) { m.Environment.Style.Preset = "violet" }, false},
 		{"bad tabColor", func(m *Manifest) { m.Environment.Style.TabColor = "blue" }, true},
 		{"valid tabColor", func(m *Manifest) { m.Environment.Style.TabColor = "#0EA5E9" }, false},
 		{"bad background", func(m *Manifest) { m.Environment.Style.Background = "#12345" }, true},

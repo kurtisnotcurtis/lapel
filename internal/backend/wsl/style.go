@@ -18,9 +18,13 @@ import (
 // Built-in visual style presets for lapel-managed WSL distributions.
 const (
 	PresetLapelDark = "lapel-dark"
-	PresetAmber     = "amber"
+	PresetViolet    = "violet"
 	PresetMinimal   = "minimal"
 	PresetNone      = "none"
+
+	// DefaultIconColor is the brand warm orange used for the Windows Terminal
+	// tucked-bolt icon, matching the Fluent ⚡ prompt glyph across themes.
+	DefaultIconColor = "#FB923C"
 )
 
 // ResolvedStyle holds the concrete prompt, banner, and Windows Terminal
@@ -38,7 +42,7 @@ type ResolvedStyle struct {
 	Foreground      string
 	CursorColor     string
 	SelectionBg     string
-	AccentAnsiCode  string // "36" (cyan) or "33" (amber)
+	AccentAnsiCode  string // "36" (cyan) or "95" (bright purple/lavender)
 }
 
 // ResolveStyle computes the effective style configuration for a distro from
@@ -86,14 +90,14 @@ func ResolveStyle(distro string, spec domain.EnvironmentStyle) ResolvedStyle {
 	}
 
 	switch preset {
-	case PresetAmber:
-		res.SchemeName = "Lapel Amber"
-		res.TabColor = "#F59E0B"
-		res.Background = "#18120B"
-		res.Foreground = "#FEF3C7"
-		res.CursorColor = "#F59E0B"
-		res.SelectionBg = "#452709"
-		res.AccentAnsiCode = "33"
+	case PresetViolet:
+		res.SchemeName = "Lapel Violet"
+		res.TabColor = "#8B5CF6"
+		res.Background = "#141022"
+		res.Foreground = "#EDE9FE"
+		res.CursorColor = "#C084FC"
+		res.SelectionBg = "#3B2763"
+		res.AccentAnsiCode = "95"
 	case PresetMinimal:
 		res.Banner = false
 	default:
@@ -159,8 +163,8 @@ fi
 `)
 
 	switch style.Preset {
-	case PresetAmber:
-		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;30;43m\] ⚡ ${_lapel_label} \[\e[0m\]${_lapel_jail_tag} \[\e[1;33m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;33m\]▸\[\e[0m\] "` + "\n")
+	case PresetViolet:
+		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;97;45m\] ⚡ ${_lapel_label} \[\e[0m\]${_lapel_jail_tag} \[\e[1;95m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;95m\]▸\[\e[0m\] "` + "\n")
 	case PresetMinimal:
 		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;36m\][${_lapel_label}]\[\e[0m\]${_lapel_jail_tag} \u@\h:\w\$ "` + "\n")
 	default: // PresetLapelDark
@@ -272,6 +276,13 @@ func buildWindowsTerminalFragmentWithTargets(style ResolvedStyle, icon string, t
 		icon = "⚡"
 	}
 
+	purpleHex := "#C084FC"
+	brightPurpleHex := "#D8B4FE"
+	if style.Preset == PresetViolet {
+		purpleHex = "#7C3AED"
+		brightPurpleHex = "#C084FC"
+	}
+
 	scheme := wtScheme{
 		Name:                style.SchemeName,
 		Background:          style.Background,
@@ -283,7 +294,7 @@ func buildWindowsTerminalFragmentWithTargets(style ResolvedStyle, icon string, t
 		Green:               "#4ADE80",
 		Yellow:              "#FACC15",
 		Blue:                "#38BDF8",
-		Purple:              "#C084FC",
+		Purple:              purpleHex,
 		Cyan:                "#22D3EE",
 		White:               "#E2E8F0",
 		BrightBlack:         "#475569",
@@ -291,7 +302,7 @@ func buildWindowsTerminalFragmentWithTargets(style ResolvedStyle, icon string, t
 		BrightGreen:         "#86EFAC",
 		BrightYellow:        "#FDE047",
 		BrightBlue:          "#7DD3FC",
-		BrightPurple:        "#D8B4FE",
+		BrightPurple:        brightPurpleHex,
 		BrightCyan:          "#67E8F9",
 		BrightWhite:         "#F8FAFC",
 	}
@@ -495,11 +506,7 @@ func applyWindowsTerminalFragmentAt(fragPath, distro string, spec domain.Environ
 		return "", fmt.Errorf("creating Windows Terminal fragment dir: %w", err)
 	}
 
-	iconColor := style.CursorColor
-	if style.TabColor != "" && style.Preset != PresetLapelDark {
-		iconColor = style.TabColor
-	}
-	iconPNG, err := RenderWindowsTerminalIconPNG(iconColor)
+	iconPNG, err := RenderWindowsTerminalIconPNG(DefaultIconColor)
 	if err != nil {
 		return "", fmt.Errorf("rendering Windows Terminal icon: %w", err)
 	}
