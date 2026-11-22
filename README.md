@@ -9,8 +9,8 @@
 <h1 align="center">lapel</h1>
 
 <p align="center">
-  <strong>Local Agent Protocol Enhancement Layer</strong><br />
-  Pin your Windows host (LM Studio / Ollama) to a purpose-built, sandboxed WSL container for your coding agents — lean and hardware-tuned.
+  <strong>Lean, sandboxed WSL environments for local AI coding agents.</strong><br />
+  Pin your Windows host (LM Studio / Ollama) to a purpose-built WSL container — lean and hardware-tuned.
 </p>
 
 `lapel` gives you a purpose-built minimal Linux environment optimized for coding agents, guarantees your Windows inference server is reachable from inside WSL, syncs VRAM-tuned model configs to your CLI agents and IDE extensions, and scopes filesystem access so an autonomous agent doesn't eat your Windows files.
