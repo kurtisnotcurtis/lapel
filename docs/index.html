@@ -14,11 +14,24 @@
       text-align: center;
     }
 
-    .hero-logo {
-      width: 108px;
-      height: 108px;
+    .hero-brand {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
       margin: 0 auto 20px;
+      font-weight: 700;
+      font-size: clamp(2.8rem, 7vw, 4.4rem);
+      color: var(--text);
+      letter-spacing: -0.02em;
+      line-height: 1;
+    }
+
+    .hero-logo {
+      width: clamp(70px, 11vw, 108px);
+      height: clamp(70px, 11vw, 108px);
       display: block;
+      flex-shrink: 0;
       stroke: var(--logo-stroke);
     }
 
@@ -885,9 +898,12 @@
   <main>
     <section class="hero" style="border-top: none;">
       <div class="container">
-        <svg class="hero-logo" viewBox="0 0 100 100" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="lapel logo">
-          <path d="M 37,8 C 48.5,9.5 59.5,12.5 69,17 L 72,34 L 55.5,41 L 70,47 C 58,65 44,79 28,92 C 34.5,71 39.2,53 39.5,39.5 C 39.6,33 38.4,28 36.4,24.2 L 46,21.2 C 44.5,15.8 41.5,11.2 37,8 Z" />
-        </svg>
+        <div class="hero-brand" aria-label="lapel">
+          <svg class="hero-logo" viewBox="0 0 100 100" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M 37,8 C 48.5,9.5 59.5,12.5 69,17 L 72,34 L 55.5,41 L 70,47 C 58,65 44,79 28,92 C 34.5,71 39.2,53 39.5,39.5 C 39.6,33 38.4,28 36.4,24.2 L 46,21.2 C 44.5,15.8 41.5,11.2 37,8 Z" />
+          </svg>
+          <span>lapel</span>
+        </div>
         <span class="badge">Open Source &middot; Apache 2.0 &middot; Windows + WSL2</span>
         <h1>Lean, sandboxed WSL environments for local AI coding agents</h1>
         <p class="lead">
@@ -914,7 +930,7 @@
 
     <section id="layers">
       <div class="container">
-        <h2>Four layers</h2>
+        <h2>Four Layers</h2>
         <p class="section-sub">
           Running coding agents against local models on Windows often introduces friction between your host GPU, your WSL environment, and your tools. <code>lapel</code> smooths out those edges across four layers in one control plane.
         </p>
@@ -1086,7 +1102,7 @@
       <div class="container">
         <div class="wt-header-row">
           <div>
-            <h2>Know you&rsquo;re in the sandbox, and keep your RAM for your KV cache</h2>
+            <h2>Clear Sandboxing</h2>
             <p class="section-sub">
               Every megabyte stock WSL wastes on background desktop services is stolen from your model&rsquo;s context window. <code>lapel</code> provisions a stripped <code>lapel</code> WSL2 distribution and drops a zero-touch <strong>Windows Terminal JSON Fragment</strong> so your agent terminal is unmistakable at a glance.
             </p>
@@ -1267,7 +1283,7 @@ Swap:           <span class="t-warn">8192</span>           0        8192
 
     <section id="quickstart">
       <div class="container">
-        <h2>The user journey</h2>
+        <h2>Key Commands</h2>
         <p class="section-sub">
           Start interactively with three commands, or manage reproducible team environments declaratively via <code>lapel.yaml</code>.
         </p>
@@ -1294,7 +1310,7 @@ Swap:           <span class="t-warn">8192</span>           0        8192
 
     <section id="integrations">
       <div class="container">
-        <h2>Supported providers &amp; agents</h2>
+        <h2>Supported Providers &amp; Agents</h2>
         <p class="section-sub">Bring your own inference server and your own coding agent; <code>lapel</code> wires them together cleanly.</p>
         <table>
           <thead>
@@ -1327,7 +1343,7 @@ Swap:           <span class="t-warn">8192</span>           0        8192
 
     <section id="manifest">
       <div class="container">
-        <h2>Declarative configuration (<code>lapel.yaml</code>)</h2>
+        <h2>Declarative Configuration (<code>lapel.yaml</code>)</h2>
         <p class="section-sub">Scaffold a reproducible project manifest with <code>lapel init</code> and apply it with <code>lapel apply</code>.</p>
         <div class="code-wrap" style="max-width: 100%;">
           <button class="copy-btn" data-copy="lapel init && lapel plan && lapel apply">Copy CLI</button>
@@ -1377,7 +1393,7 @@ Swap:           <span class="t-warn">8192</span>           0        8192
 
     <section id="privacy">
       <div class="container">
-        <h2>Local-first privacy</h2>
+        <h2>Local-First Privacy</h2>
         <p class="section-sub">
           Hardware detection and baseline model recommendations run <strong>100% locally</strong> during <code>lapel doctor</code> and <code>lapel setup</code>.
           Optional community benchmark sharing (<code>lapel community</code>) is strictly opt-in via <code>LAPEL_COMMUNITY_ENABLED=true</code>, and can be pointed at a self-hosted backend via <code>LAPEL_COMMUNITY_ENDPOINT</code>.

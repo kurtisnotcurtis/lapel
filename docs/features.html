@@ -105,6 +105,7 @@ lapel provider model-list --provider lm-studio</code></pre></div>
 </ul>
 <div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel env status                  # inspect registered distro runtime state
 lapel env style --preset=amber    # switch WSL prompt &amp; Windows Terminal theme preset
+lapel env systemd off --restart   # disable systemd and start sshd via lightweight [boot] hook
 lapel config                      # inspect host .wslconfig memory/CPU caps and networking warnings
 lapel provision                   # build the agent-optimized lapel WSL baseline (idempotent)</code></pre></div>
 <hr />
@@ -156,6 +157,7 @@ environment:
   distribution: lapel
   base: ubuntu          # &#34;ubuntu&#34; | &#34;debian&#34;; defaults to &#34;ubuntu&#34;
   version: &#34;24.04&#34;      # pinned release; auto-selected default when omitted
+  systemd: true         # set false to skip systemd and start sshd via lightweight [boot] hook
   packages:             # additional apt packages beyond the built-in agent toolkit
     - ripgrep
     - fd-find
