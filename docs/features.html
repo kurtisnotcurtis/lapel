@@ -108,7 +108,7 @@ lapel provider model-list --provider lm-studio</code></pre></div>
 <p>Stock Ubuntu from the Microsoft Store is a general-purpose OS living inside Windows, complete with systemd services, background daemons, full <code>PATH</code> with <code>/mnt/c</code>, and GUI apps. When your inference server is also running on the same machine, every MB of RAM and percent of CPU that WSL wastes is taken directly from your model.</p>
 <p>A purpose-built minimal distro is a feature, not a limitation:</p>
 <ul>
-<li><strong>Automatic provisioning</strong>: Imports a fresh Ubuntu/Debian rootfs into <code>%LOCALAPPDATA%\lapel\distros\lapel</code> with checksum verification</li>
+<li><strong>Automatic provisioning</strong>: Imports an Ubuntu cloud rootfs from <code>cloud-images.ubuntu.com</code> into <code>%LOCALAPPDATA%\lapel\distros\lapel</code></li>
 <li><strong>Idempotent package management</strong>: Installs only what coding agents need (<code>git</code>, <code>curl</code>, <code>tmux</code>, <code>ripgrep</code>, <code>sshd</code>, <code>procps</code>, <code>iproute2</code>, etc.)</li>
 <li><strong>SSH ready</strong>: Configures key-based authentication automatically</li>
 <li><strong>PATH filtering</strong>: Strips <code>/mnt/c</code> and <code>/mnt/d</code> from <code>PATH</code> to prevent Windows host tool leakage</li>
@@ -122,16 +122,14 @@ lapel config                      # inspect host .wslconfig memory/CPU caps and 
 lapel provision                   # build the agent-optimized lapel WSL baseline (idempotent)</code></pre></div>
 <hr />
 <h3 id="3-agent-sandboxing-honest-reporting">3. Agent sandboxing &amp; honest reporting 🥉 <a class="heading-anchor" href="#3-agent-sandboxing-honest-reporting" aria-label="Link to 3. Agent sandboxing &amp; honest reporting 🥉">#</a></h3>
-<p>Filesystem scoping, network rules, and process timeouts so your coding agent can work in your project workspace without risking your Windows system files.</p>
+<p>Non-root user isolation, clean <code>PATH</code> filtering, optional process timeouts, and workspace import modes so your coding agent can work in your project workspace with clear, honest boundaries.</p>
 <ul>
-<li><strong>Filesystem scoping</strong>: Configure <code>read-write</code>, <code>read-only</code>, or <code>deny</code> access to paths</li>
-<li><strong>Workspace import modes</strong>: Live <code>bind</code> mounts for rapid development or isolated <code>copy</code> (<code>rsync</code>) snapshots</li>
-<li><strong>Process lifecycle &amp; timeouts</strong>: Runs sessions in dedicated process groups (<code>setsid</code>) with verified guest-side teardown (<code>lapel session smoke</code>) so no orphaned processes survive</li>
-<li><strong>Honest enforcement reporting</strong>: Explicitly distinguishes <code>enforced</code> vs. <code>requested</code> vs. <code>unsupported</code> vs. <code>needs-config</code> controls (<code>lapel jail-controls</code>), never silently ignored or overclaimed</li>
+<li><strong>Non-root execution</strong>: Runs <code>lapel run</code> sessions via <code>wsl.exe -u &lt;jail.user&gt;</code> (dedicated unprivileged <code>agent</code> user with no sudo access)</li>
+<li><strong>Workspace import modes</strong>: Live <code>bind</code> links for rapid development or isolated <code>copy</code> (<code>rsync</code>) snapshots</li>
+<li><strong>Honest enforcement reporting</strong>: Explicitly distinguishes <code>enforced</code> vs. <code>requested</code> vs. <code>unsupported</code> vs. <code>needs-config</code> controls (<code>lapel jail-controls</code>), never silently ignoring a rule or overclaiming kernel isolation</li>
 </ul>
-<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel apply               # persist desired baseline &amp; import workspace
-lapel status              # check live state and drift against baseline
-lapel session smoke       # verify session launch, teardown, and zero orphaned processes</code></pre></div>
+<div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel apply               # provision distro &amp; import workspace per lapel.yaml
+lapel status              # check live state against lapel.yaml</code></pre></div>
 <hr />
 <h3 id="4-hardware-aware-tuning-agentide-config-sync">4. Hardware-aware tuning &amp; agent/IDE config sync ⚡ <a class="heading-anchor" href="#4-hardware-aware-tuning-agentide-config-sync" aria-label="Link to 4. Hardware-aware tuning &amp; agent/IDE config sync ⚡">#</a></h3>
 <p>Stop guessing which model quantization, context window, or batch size fits your GPU, and stop hand-editing JSON files every time you load a new model.</p>
@@ -156,11 +154,11 @@ lapel session smoke       # verify session launch, teardown, and zero orphaned p
 </tbody></table></div>
 <hr />
 <h2 id="declarative-configuration-init-plan-apply-status">Declarative configuration (<code>init</code> / <code>plan</code> / <code>apply</code> / <code>status</code>) <a class="heading-anchor" href="#declarative-configuration-init-plan-apply-status" aria-label="Link to Declarative configuration (init / plan / apply / status)">#</a></h2>
-<p>For power users and teams who want reproducible configuration management, <code>lapel</code> supports a <code>lapel.yaml</code> manifest with SQLite-backed drift detection:</p>
+<p>For power users and teams who want reproducible configuration management, <code>lapel</code> supports a strictly validated <code>lapel.yaml</code> manifest:</p>
 <div class="code-wrap"><span class="code-lang">bash</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-bash">lapel init                # scaffold lapel.yaml in current directory
-lapel plan                # preview drift between live state and lapel.yaml (non-zero exit on drift)
-lapel apply               # persist baseline to .lapel/state.db + import workspace
-lapel status              # compare live state against persisted baseline over time</code></pre></div>
+lapel apply               # provision distro &amp; import workspace per lapel.yaml
+lapel plan                # check live state against lapel.yaml (non-zero exit on drift)
+lapel status              # report live state against lapel.yaml</code></pre></div>
 <h3 id="manifest-schema-lapelyaml">Manifest schema (<code>lapel.yaml</code>) <a class="heading-anchor" href="#manifest-schema-lapelyaml" aria-label="Link to Manifest schema (lapel.yaml)">#</a></h3>
 <div class="code-wrap"><span class="code-lang">yaml</span><button class="copy-btn" type="button">Copy</button><pre><code class="language-yaml">apiVersion: lapel.dev/v1
 name: lapel-project

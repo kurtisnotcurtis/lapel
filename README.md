@@ -86,7 +86,7 @@ doctor → setup → run
 2. **`lapel setup`**: One command to verify providers, provision the `lapel` WSL distro, mount your workspace, and configure jail policies.
 3. **`lapel run`**: Launch your coding agent (`pi`, `claude-code`, `copilot`) inside the sandboxed WSL environment connected to your Windows inference provider.
 
-For declarative environments and teams: `init`, `plan`, `apply`, and `status` manage your setup via a `lapel.yaml` manifest backed by SQLite drift detection (`.lapel/state.db`).
+For declarative environments and teams: `init`, `apply`, `plan`, and `status` manage your setup via a strictly validated `lapel.yaml` manifest.
 
 ---
 

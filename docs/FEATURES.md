@@ -44,7 +44,7 @@ Stock Ubuntu from the Microsoft Store is a general-purpose OS living inside Wind
 
 A purpose-built minimal distro is a feature, not a limitation:
 
-- **Automatic provisioning**: Imports a fresh Ubuntu/Debian rootfs into `%LOCALAPPDATA%\lapel\distros\lapel` with checksum verification
+- **Automatic provisioning**: Imports an Ubuntu cloud rootfs from `cloud-images.ubuntu.com` into `%LOCALAPPDATA%\lapel\distros\lapel`
 - **Idempotent package management**: Installs only what coding agents need (`git`, `curl`, `tmux`, `ripgrep`, `sshd`, `procps`, `iproute2`, etc.)
 - **SSH ready**: Configures key-based authentication automatically
 - **PATH filtering**: Strips `/mnt/c` and `/mnt/d` from `PATH` to prevent Windows host tool leakage
@@ -63,17 +63,15 @@ lapel provision                   # build the agent-optimized lapel WSL baseline
 
 ### 3. Agent sandboxing & honest reporting 🥉
 
-Filesystem scoping, network rules, and process timeouts so your coding agent can work in your project workspace without risking your Windows system files.
+Non-root user isolation, clean `PATH` filtering, optional process timeouts, and workspace import modes so your coding agent can work in your project workspace with clear, honest boundaries.
 
-- **Filesystem scoping**: Configure `read-write`, `read-only`, or `deny` access to paths
-- **Workspace import modes**: Live `bind` mounts for rapid development or isolated `copy` (`rsync`) snapshots
-- **Process lifecycle & timeouts**: Runs sessions in dedicated process groups (`setsid`) with verified guest-side teardown (`lapel session smoke`) so no orphaned processes survive
-- **Honest enforcement reporting**: Explicitly distinguishes `enforced` vs. `requested` vs. `unsupported` vs. `needs-config` controls (`lapel jail-controls`), never silently ignored or overclaimed
+- **Non-root execution**: Runs `lapel run` sessions via `wsl.exe -u <jail.user>` (dedicated unprivileged `agent` user with no sudo access)
+- **Workspace import modes**: Live `bind` links for rapid development or isolated `copy` (`rsync`) snapshots
+- **Honest enforcement reporting**: Explicitly distinguishes `enforced` vs. `requested` vs. `unsupported` vs. `needs-config` controls (`lapel jail-controls`), never silently ignoring a rule or overclaiming kernel isolation
 
 ```bash
-lapel apply               # persist desired baseline & import workspace
-lapel status              # check live state and drift against baseline
-lapel session smoke       # verify session launch, teardown, and zero orphaned processes
+lapel apply               # provision distro & import workspace per lapel.yaml
+lapel status              # check live state against lapel.yaml
 ```
 
 ---
@@ -108,13 +106,13 @@ doctor → setup → run
 
 ## Declarative configuration (`init` / `plan` / `apply` / `status`)
 
-For power users and teams who want reproducible configuration management, `lapel` supports a `lapel.yaml` manifest with SQLite-backed drift detection:
+For power users and teams who want reproducible configuration management, `lapel` supports a strictly validated `lapel.yaml` manifest:
 
 ```bash
 lapel init                # scaffold lapel.yaml in current directory
-lapel plan                # preview drift between live state and lapel.yaml (non-zero exit on drift)
-lapel apply               # persist baseline to .lapel/state.db + import workspace
-lapel status              # compare live state against persisted baseline over time
+lapel apply               # provision distro & import workspace per lapel.yaml
+lapel plan                # check live state against lapel.yaml (non-zero exit on drift)
+lapel status              # report live state against lapel.yaml
 ```
 
 ### Manifest schema (`lapel.yaml`)

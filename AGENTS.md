@@ -18,14 +18,11 @@ technical decisions from de-risking so you don't relearn them by pain.
 
 ## Environment setup (this machine)
 
-- Host: Windows 11; Linux runtime: WSL2 (`wsl.exe`), distro probed as `lapel`.
-- Build: `./build.sh build` or `make build` — produces `bin/lapel.exe`.
-- Vet: `go vet ./...` — must be clean.
-- Unit tests (no WSL required):
-  ```sh
-  go test ./community/... ./internal/config/... ./internal/features/... ./internal/jail/... ./internal/plugins/... ./internal/reconcile/... ./internal/state/... ./internal/workspace/... ./cmd/lapel/...
-  ```
-- Live WSL suites: `./build.sh test` or `make test` runs all tests including live WSL tests (`internal/backend/wsl`, `internal/provider`), which require a working `wsl.exe`.
+- Host: Windows 11; Linux runtime: WSL2 (`wsl.exe`), default distro `lapel`.
+- Build: `make build` — produces `bin/lapel.exe`.
+- Vet: `make vet` (`go vet ./...`) — must be clean.
+- Unit tests (no WSL required, passes on Windows/Linux/macOS): `make test` (`go test ./...`).
+- Live WSL tests: set `LAPEL_LIVE_WSL=1` (or `LAPEL_E2E=1` for full throwaway distro provisioning).
 
 ## Critical technical gotchas (do not regress these)
 
