@@ -12,12 +12,36 @@ import (
 
 type vec2 struct{ x, y float64 }
 
+// BrandIconTopHex, BrandIconMidHex, and BrandIconBotHex define the vertical
+// golden-amber -> warm-orange -> coral-rose gradient matching Windows 11's
+// Fluent ⚡ emoji so the Windows Terminal tab icon and shell prompt harmonize.
+const (
+	BrandIconTopHex = "#FFB952"
+	BrandIconMidHex = "#FA8546"
+	BrandIconBotHex = "#F2595B"
+)
+
+// RenderBrandWindowsTerminalIconPNG renders the 64x64 lapel-bolt-tucked icon
+// with the brand golden-orange-coral gradient matching ⚡.
+func RenderBrandWindowsTerminalIconPNG() ([]byte, error) {
+	return RenderWindowsTerminalIconGradientPNG(BrandIconTopHex, BrandIconMidHex, BrandIconBotHex)
+}
+
 // RenderWindowsTerminalIconPNG renders a 64x64 transparent antialiased PNG of
-// the lapel-bolt-tucked logo tinted to hexColor (e.g. "#FB923C").
+// the lapel-bolt-tucked logo tinted to a solid hexColor (e.g. "#FA8546").
 // Windows Terminal profile icons require raster formats (.png/.ico) rather than
 // SVG, so generating this in pure Go keeps lapel.exe self-contained.
 func RenderWindowsTerminalIconPNG(hexColor string) ([]byte, error) {
-	r, g, b := parseHexColor(hexColor, 0xFB, 0x92, 0x3C)
+	return RenderWindowsTerminalIconGradientPNG(hexColor, hexColor, hexColor)
+}
+
+// RenderWindowsTerminalIconGradientPNG renders a 64x64 transparent antialiased
+// PNG of the lapel-bolt-tucked logo with a vertical 3-stop gradient from
+// topHex (y=8) through midHex (y=50) to botHex (y=92).
+func RenderWindowsTerminalIconGradientPNG(topHex, midHex, botHex string) ([]byte, error) {
+	r0, g0, b0 := parseHexColor(topHex, 0xFF, 0xB9, 0x52)
+	r1, g1, b1 := parseHexColor(midHex, 0xFA, 0x85, 0x46)
+	r2, g2, b2 := parseHexColor(botHex, 0xF2, 0x59, 0x5B)
 
 	// Single closed lapel-bolt tucked silhouette sampled into a smooth polyline
 	// in 0..100 viewBox coordinates.
@@ -27,14 +51,35 @@ func RenderWindowsTerminalIconPNG(hexColor string) ([]byte, error) {
 		size       = 64
 		sub        = 4 // 4x4 supersampling for crisp edges at 16-32px tab scale
 		strokeHalf = 3.1
-		fillAlpha  = 0.22
+		fillAlpha  = 0.28
 	)
 
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	invSub := 1.0 / float64(sub)
 	invTotal := 1.0 / float64(sub*sub)
 
+	lerpU8 := func(a, b uint8, t float64) uint8 {
+		return uint8(math.Round(float64(a)*(1-t) + float64(b)*t))
+	}
+
 	for py := 0; py < size; py++ {
+		// Vertical gradient parameter across the bolt's 8..92 viewBox span.
+		centerY := (float64(py) + 0.5) * (100.0 / float64(size))
+		gt := (centerY - 8.0) / (92.0 - 8.0)
+		if gt < 0 {
+			gt = 0
+		} else if gt > 1 {
+			gt = 1
+		}
+		var r, g, b uint8
+		if gt <= 0.5 {
+			t := gt * 2.0
+			r, g, b = lerpU8(r0, r1, t), lerpU8(g0, g1, t), lerpU8(b0, b1, t)
+		} else {
+			t := (gt - 0.5) * 2.0
+			r, g, b = lerpU8(r1, r2, t), lerpU8(g1, g2, t), lerpU8(b1, b2, t)
+		}
+
 		for px := 0; px < size; px++ {
 			var cov float64
 			for sy := 0; sy < sub; sy++ {

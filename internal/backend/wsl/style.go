@@ -506,7 +506,7 @@ func applyWindowsTerminalFragmentAt(fragPath, distro string, spec domain.Environ
 		return "", fmt.Errorf("creating Windows Terminal fragment dir: %w", err)
 	}
 
-	iconPNG, err := RenderWindowsTerminalIconPNG(DefaultIconColor)
+	iconPNG, err := RenderBrandWindowsTerminalIconPNG()
 	if err != nil {
 		return "", fmt.Errorf("rendering Windows Terminal icon: %w", err)
 	}

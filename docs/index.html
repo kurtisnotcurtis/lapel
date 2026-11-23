@@ -32,8 +32,8 @@
       height: clamp(70px, 11vw, 108px);
       display: block;
       flex-shrink: 0;
-      stroke: var(--logo-stroke);
-      fill: var(--logo-fill);
+      stroke: url(#lapel-bolt-grad);
+      fill: url(#lapel-bolt-fill);
     }
 
     .badge {
@@ -776,13 +776,8 @@
       height: 14px;
       vertical-align: -2px;
       margin-right: 5px;
-      stroke: var(--logo-stroke);
-      fill: var(--logo-fill);
-    }
-
-    .wt-lapel .wt-tab-icon {
-      stroke: #fb923c;
-      fill: rgba(251, 146, 60, 0.22);
+      stroke: url(#lapel-bolt-grad);
+      fill: url(#lapel-bolt-fill);
     }
 
     .wt-lapel[data-preset="violet"] .wt-tab-active {
@@ -907,6 +902,20 @@
   </style>
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute;pointer-events:none" aria-hidden="true">
+    <defs>
+      <linearGradient id="lapel-bolt-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#FFB952" />
+        <stop offset="50%" stop-color="#FA8546" />
+        <stop offset="100%" stop-color="#F2595B" />
+      </linearGradient>
+      <linearGradient id="lapel-bolt-fill" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#FFB952" stop-opacity="0.28" />
+        <stop offset="50%" stop-color="#FA8546" stop-opacity="0.28" />
+        <stop offset="100%" stop-color="#F2595B" stop-opacity="0.28" />
+      </linearGradient>
+    </defs>
+  </svg>
   <header>
     <div class="container nav">
       <a class="brand" href="#">

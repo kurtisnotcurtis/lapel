@@ -88,8 +88,8 @@ header {
 .brand svg {
   width: 28px;
   height: 28px;
-  stroke: var(--logo-stroke);
-  fill: var(--logo-fill);
+  stroke: url(#lapel-bolt-grad);
+  fill: url(#lapel-bolt-fill);
 }
 
 .nav-links {
