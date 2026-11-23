@@ -7,7 +7,8 @@ import (
 
 // CopilotAgent implements Agent for GitHub Copilot CLI.
 type CopilotAgent struct {
-	dist string
+	dist        string
+	detectedBin string
 }
 
 func NewCopilotAgent(distro ...string) *CopilotAgent {
@@ -18,11 +19,21 @@ func NewCopilotAgent(distro ...string) *CopilotAgent {
 	return &CopilotAgent{dist: d}
 }
 
-func (a *CopilotAgent) Name() string   { return "copilot" }
-func (a *CopilotAgent) Binary() string { return "github-copilot-cli" }
+func (a *CopilotAgent) Name() string { return "copilot" }
+
+func (a *CopilotAgent) Binary() string {
+	if a.detectedBin != "" {
+		return a.detectedBin
+	}
+	return "copilot"
+}
 
 func (a *CopilotAgent) Detect(ctx context.Context) (bool, error) {
-	return detectBinaryInWSL(ctx, a.dist, "github-copilot-cli", "copilot")
+	bin, ok, err := detectBinaryInWSL(ctx, a.dist, "copilot", "github-copilot-cli")
+	if ok {
+		a.detectedBin = bin
+	}
+	return ok, err
 }
 
 func (a *CopilotAgent) Configure(env map[string]string, providerURL string, model string) {

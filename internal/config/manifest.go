@@ -1,40 +1,50 @@
-// Package config loads and validates the Lapel manifest (Lapel.yaml)
-// and maps it onto the backend-independent domain model. It owns no WSL or
-// provider mechanics — that belongs to the execution-backend boundary (spec 4).
+// Package config loads and validates the Lapel manifest (lapel.yaml)
+// and maps it onto the backend-independent domain model.
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"lapel/internal/domain"
 	"gopkg.in/yaml.v3"
+
+	"lapel/internal/domain"
 )
 
 // apiVersion is the only supported manifest schema version.
 const apiVersion = "lapel.dev/v1"
 
+// DefaultDistribution is the default WSL distribution name used when
+// environment.distribution is omitted.
+const DefaultDistribution = "lapel"
+
 // DefaultManifestName is the conventional manifest file name, searched for in
-// the current working directory (and ancestors when WalkUp is set).
+// the current working directory and its ancestors.
 const DefaultManifestName = "lapel.yaml"
 
 // legacyManifestName is accepted as a fallback on case-sensitive filesystems.
 const legacyManifestName = "Lapel.yaml"
 
-// Manifest is the declarative description of a desired Lapel setup. It is
-// intentionally shallow and maps directly onto domain objects; it must not be
-// coupled to any particular execution backend.
+// ErrManifestNotFound is returned when no lapel.yaml manifest exists in the
+// search path. Callers can check errors.Is(err, config.ErrManifestNotFound) to
+// distinguish "no manifest present" from a parse or validation error.
+var ErrManifestNotFound = errors.New("manifest not found")
+
+// Manifest is the declarative description of a desired Lapel setup.
 type Manifest struct {
-	APIVersion  string        `yaml:"apiVersion"`
-	Name        string        `yaml:"name"`
-	Environment Environment   `yaml:"environment"`
-	Provider    Provider      `yaml:"provider"`
-	Agent       Agent         `yaml:"agent"`
-	Workspace   Workspace     `yaml:"workspace"`
-	Jail        Jail          `yaml:"jail"`
+	APIVersion  string      `yaml:"apiVersion"`
+	Name        string      `yaml:"name"`
+	Environment Environment `yaml:"environment"`
+	Provider    Provider    `yaml:"provider"`
+	Agent       Agent       `yaml:"agent"`
+	Workspace   Workspace   `yaml:"workspace"`
+	Jail        Jail        `yaml:"jail"`
 }
 
 // EnvironmentStyle configures the visual shell prompt, welcome banner, and
@@ -48,65 +58,56 @@ type EnvironmentStyle struct {
 	WindowsTerminal *bool  `yaml:"windowsTerminal" json:"windowsTerminal,omitempty"` // manage Windows Terminal fragment
 }
 
-// Environment mirrors domain.Environment for the manifest's environment section.
+// Environment describes the target WSL distribution and provisioning options.
 type Environment struct {
-	// Distribution is the target distro name. Use "import" (or leave blank and
-	// supply Base+Version) to have lapel create a fresh pinned rootfs.
-	Distribution string            `yaml:"distribution"`
-	Base         string            `yaml:"base"`         // "ubuntu" | "debian"
-	Version      string            `yaml:"version"`      // e.g. "24.04" / "12"
-	RootFSImage  string            `yaml:"rootfsImage"`  // pinned image (+checksum) override
-	Systemd      *bool             `yaml:"systemd"`      // boot WSL with systemd (nil defaults to true)
-	Runtimes     map[string]string `yaml:"runtimes"`     // toolchain -> pinned major version
-	Packages     []string          `yaml:"packages"`     // extra apt packages (agent-toolkit baseline always applies)
-	Style        EnvironmentStyle  `yaml:"style"`        // shell prompt & Windows Terminal styling
+	Distribution string           `yaml:"distribution"` // target distro name (defaults to "lapel")
+	Base         string           `yaml:"base"`         // "ubuntu"
+	Version      string           `yaml:"version"`      // e.g. "24.04"
+	Systemd      *bool            `yaml:"systemd"`      // boot WSL with systemd (nil defaults to true)
+	Packages     []string         `yaml:"packages"`     // extra apt packages (agent-toolkit baseline always applies)
+	Style        EnvironmentStyle `yaml:"style"`        // shell prompt & Windows Terminal styling
 }
 
-// Provider mirrors domain.Provider minus the secret-backed API key.
+// Provider describes the inference provider endpoint and model defaults.
 type Provider struct {
 	Name              string        `yaml:"name"`
-	Type              string        `yaml:"type"` // e.g. "lm-studio", "ollama", "openai-compatible"
+	Type              string        `yaml:"type"` // "lm-studio" | "ollama" | "openai-compatible"
 	BaseURL           string        `yaml:"baseURL"`
 	Model             string        `yaml:"model"`
-	APIKeySecret      string        `yaml:"apiKeySecret"` // optional; else resolved from secret store by name
-	Timeout           time.Duration `yaml:"timeout"`       // seconds when a bare number is given
+	Timeout           time.Duration `yaml:"timeout"`
 	ConnectionTimeout time.Duration `yaml:"connectionTimeout"`
 }
 
-// Agent mirrors domain.Agent.
+// Agent describes the default coding-agent CLI selection.
 type Agent struct {
-	Name     string `yaml:"name"`     // e.g. "pi"
-	Harness  string `yaml:"harness"`  // canonical harness id, e.g. "opencode"
+	Name     string `yaml:"name"`     // "pi" | "claude-code" | "copilot"
 	Provider string `yaml:"provider"` // logical provider name reference
 }
 
-// Workspace mirrors domain.Workspace.
+// Workspace describes the host project directory and how it is mapped into WSL.
 type Workspace struct {
 	Name       string `yaml:"name"`
-	Path       string `yaml:"path"`   // host path (Win or Lin)
+	Path       string `yaml:"path"` // host path (Win or Lin)
 	Source     string `yaml:"source"`
 	ImportMode string `yaml:"importMode"` // "copy" | "bind"
 }
 
-// Jail mirrors domain.Jail.
+// Jail describes execution policy settings applied to agent sessions.
 type Jail struct {
-	Name          string            `yaml:"name"`
-	Profile       string            `yaml:"profile"` // e.g. "developer"
-	User          string            `yaml:"user"`    // dedicated non-root user
-	Filesystem    map[string]string `yaml:"filesystem"`
-	Processes     struct {
-		Privileged     bool   `yaml:"privileged"`
-		TimeoutSeconds int    `yaml:"timeoutSeconds"`
+	Name       string            `yaml:"name"`
+	Profile    string            `yaml:"profile"` // e.g. "developer"
+	User       string            `yaml:"user"`    // dedicated non-root user
+	Filesystem map[string]string `yaml:"filesystem"`
+	Processes  struct {
+		Privileged     bool `yaml:"privileged"`
+		TimeoutSeconds int  `yaml:"timeoutSeconds"`
 	} `yaml:"processes"`
-	Resources struct {
-		Memory string `yaml:"memory"`
-		CPU    int    `yaml:"cpu"`
-	} `yaml:"resources"`
-	Network string `yaml:"network"` // "unrestricted" | ...
+	Network string `yaml:"network"` // "unrestricted" | "outbound-only" | "none"
 }
 
 // DiscoverManifest locates a manifest by searching the given directory and its
-// ancestors for DefaultManifestName. It returns an error when none is found.
+// ancestors for DefaultManifestName. It returns an error wrapping
+// ErrManifestNotFound when none is found.
 func DiscoverManifest(startDir string) (string, error) {
 	dir, err := filepath.Abs(startDir)
 	if err != nil {
@@ -125,12 +126,12 @@ func DiscoverManifest(startDir string) (string, error) {
 		}
 		dir = parent
 	}
-	return "", fmt.Errorf("no %s found in %s or any ancestor directory", DefaultManifestName, startDir)
+	return "", fmt.Errorf("%w: no %s in %s or any ancestor directory", ErrManifestNotFound, DefaultManifestName, startDir)
 }
 
 // LoadEffective loads a manifest at an explicit path, or discovers one in the
 // current directory and its ancestors when path is empty. It returns the
-// default-applied manifest ready to reconcile.
+// default-applied, validated manifest ready to reconcile.
 func LoadEffective(path string) (*Manifest, error) {
 	if strings.TrimSpace(path) == "" {
 		found, err := DiscoverManifest(".")
@@ -142,29 +143,40 @@ func LoadEffective(path string) (*Manifest, error) {
 	return Load(path)
 }
 
-// Load reads and parses the manifest at path. It applies defaults; use Validate
-// to check schema/cross-reference correctness afterwards.
+// LoadOptional loads a manifest when present. If path is empty and no manifest
+// exists in the current directory or its ancestors, it returns (nil, nil).
+// Any parse or validation error is returned so malformed manifests are never
+// silently ignored.
+func LoadOptional(path string) (*Manifest, error) {
+	m, err := LoadEffective(path)
+	if err != nil {
+		if strings.TrimSpace(path) == "" && errors.Is(err, ErrManifestNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return m, nil
+}
+
+// Load reads, strictly decodes (rejecting unknown keys at every nesting level),
+// applies defaults, and validates the manifest at path.
 func Load(path string) (*Manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading manifest %s: %w", path, err)
 	}
 	var m Manifest
-	// Decode into a node map first to reject unknown top-level keys (typos),
-	// since yaml.v3 does not provide strict decoding.
-	var head map[string]yaml.Node
-	if err := yaml.Unmarshal(data, &head); err != nil {
-		return nil, fmt.Errorf("parsing manifest %s: %w", path, err)
-	}
-	for k := range head {
-		if !allowedTopLevelKey(k) {
-			return nil, fmt.Errorf("manifest %s: unknown top-level key %q (allowed: apiVersion, name, environment, provider, agent, workspace, jail)", path, k)
+	if len(bytes.TrimSpace(data)) > 0 {
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true)
+		if err := dec.Decode(&m); err != nil && !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("parsing manifest %s: %w", path, err)
 		}
 	}
-	if err := yaml.Unmarshal(data, &m); err != nil {
-		return nil, fmt.Errorf("parsing manifest %s: %w", path, err)
-	}
 	m.applyDefaults(path)
+	if err := m.Validate(); err != nil {
+		return nil, fmt.Errorf("manifest %s: %w", path, err)
+	}
 	return &m, nil
 }
 
@@ -177,7 +189,10 @@ func (m *Manifest) applyDefaults(path string) {
 	if strings.TrimSpace(m.Name) == "" {
 		m.Name = defaultProjectName(path)
 	}
-	if m.Environment.Base == "" && !strings.Contains(strings.ToLower(m.Environment.RootFSImage), "debian") {
+	if strings.TrimSpace(m.Environment.Distribution) == "" {
+		m.Environment.Distribution = DefaultDistribution
+	}
+	if strings.TrimSpace(m.Environment.Base) == "" {
 		m.Environment.Base = "ubuntu"
 	}
 	if strings.TrimSpace(m.Environment.Style.Preset) == "" {
@@ -186,13 +201,13 @@ func (m *Manifest) applyDefaults(path string) {
 	if m.Agent.Provider == "" {
 		m.Agent.Provider = m.Provider.Name
 	}
-	if strings.EqualFold(m.Workspace.ImportMode, "") {
+	if strings.TrimSpace(m.Workspace.ImportMode) == "" {
 		m.Workspace.ImportMode = "bind"
 	}
-	if strings.EqualFold(m.Jail.Profile, "") {
+	if strings.TrimSpace(m.Jail.Profile) == "" {
 		m.Jail.Profile = "developer"
 	}
-	if strings.EqualFold(m.Jail.User, "") {
+	if strings.TrimSpace(m.Jail.User) == "" {
 		m.Jail.User = "agent"
 	}
 	if m.Provider.Timeout > 0 && m.Provider.ConnectionTimeout == 0 {
@@ -214,17 +229,16 @@ func defaultProjectName(path string) string {
 	return base
 }
 
-// EnvSpec maps the environment section onto domain.Environment. Runtimes and
-// packages are carried through verbatim; RootFSImage is passed to the backend
-// so it can pin/verify the rootfs image when provisioning a fresh distro.
+// EnvSpec maps the environment section onto domain.Environment.
 func (m *Manifest) EnvSpec() domain.Environment {
+	dist := firstNonEmpty(m.Environment.Distribution, DefaultDistribution)
 	return domain.Environment{
-		Name:         firstNonEmpty(m.Environment.Distribution, m.Provider.Name),
+		Name:         dist,
 		Backend:      "wsl",
-		Distribution: m.Environment.Distribution,
-		Runtimes:     m.Environment.Runtimes,
+		Distribution: dist,
+		Base:         m.Environment.Base,
+		Version:      m.Environment.Version,
 		Packages:     m.Environment.Packages,
-		RootFSImage:  m.Environment.RootFSImage,
 		Systemd:      m.Environment.Systemd,
 		Style: domain.EnvironmentStyle{
 			Preset:          m.Environment.Style.Preset,
@@ -237,9 +251,7 @@ func (m *Manifest) EnvSpec() domain.Environment {
 	}
 }
 
-// ProviderSpec maps the provider section onto domain.Provider. The API key is
-// resolved from the secret store by name when apiKeySecret is empty; here we
-// only surface the reference so callers can resolve it before use.
+// ProviderSpec maps the provider section onto domain.Provider.
 func (m *Manifest) ProviderSpec() domain.Provider {
 	return domain.Provider{
 		Name:              firstNonEmpty(m.Provider.Name, "local"),

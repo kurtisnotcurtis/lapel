@@ -44,7 +44,7 @@ func (p *KiloCodePlugin) ConfigPath() string {
 	return filepath.Join(userHomeDir(), ".vscode", "extensions", "kilo-code", "config.json")
 }
 
-func (p *KiloCodePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error) {
+func buildKiloConfig(providers []ProviderSpec) KiloConfig {
 	baseURL := "http://127.0.0.1:1234/v1"
 	providerLabel := "LM Studio (local)"
 	models := make(map[string]KiloModel)
@@ -67,7 +67,7 @@ func (p *KiloCodePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error
 		}
 	}
 
-	cfg := KiloConfig{
+	return KiloConfig{
 		Version:     "1.0",
 		GeneratedAt: time.Now().UTC(),
 		Provider: KiloProvider{
@@ -79,14 +79,29 @@ func (p *KiloCodePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error
 			Models: models,
 		},
 	}
-
-	return json.MarshalIndent(cfg, "", "  ")
 }
 
+func (p *KiloCodePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error) {
+	return json.MarshalIndent(buildKiloConfig(providers), "", "  ")
+}
+
+// Apply merges lapel's provider section into the Kilo Code config file,
+// preserving unrelated keys and backing up any existing file to .bak.
 func (p *KiloCodePlugin) Apply(providers []ProviderSpec) (string, error) {
-	data, err := p.GenerateConfig(providers)
+	target := p.ConfigPath()
+	existing, err := readExistingJSONObject(target)
 	if err != nil {
 		return "", err
 	}
-	return writeConfigFile(p.ConfigPath(), data)
+
+	cfg := buildKiloConfig(providers)
+	existing["version"] = cfg.Version
+	existing["generated_at"] = cfg.GeneratedAt
+	existing["provider"] = cfg.Provider
+
+	data, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return writeConfigFile(target, data)
 }

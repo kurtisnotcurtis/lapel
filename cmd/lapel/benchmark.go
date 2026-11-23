@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"lapel/community"
-	"lapel/internal/backend/wsl"
+	"lapel/internal/config"
 	"lapel/internal/features"
 	"lapel/internal/provider"
 )
@@ -33,10 +33,12 @@ type BenchmarkResult struct {
 
 func benchmarkCmd() *cobra.Command {
 	var (
+		distro      string
 		endpointURL string
 		modelName   string
 		providerStr string
 		batchSize   int
+		noWarmup    bool
 		share       bool
 		dryRun      bool
 	)
@@ -44,11 +46,18 @@ func benchmarkCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "benchmark",
 		Short: "Run a standardized coding prompt benchmark against your active local provider",
-		Long: `Measures real tokens/second and hardware profile metrics against your active
-LM Studio or Ollama server, prints a Rig Benchmark Card, and optionally shares
-the verified report when --share is passed (requires LAPEL_COMMUNITY_ENABLED=true).`,
+		Long: `Measures warm end-to-end tokens/second and hardware profile metrics against your
+active LM Studio or Ollama server, prints a Rig Benchmark Card, and optionally
+shares the verified report when --share is passed (requires
+LAPEL_COMMUNITY_ENABLED=true and LAPEL_COMMUNITY_ENDPOINT).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			targetDist := resolveDistro(distro, m)
 
 			profile, hwInfo, _ := buildHardwareProfile(ctx)
 			hash := profile.Hash()
@@ -64,7 +73,7 @@ the verified report when --share is passed (requires LAPEL_COMMUNITY_ENABLED=tru
 			provName := providerStr
 
 			if baseURL == "" {
-				reg := provider.NewRegistry(wsl.Dist)
+				reg := provider.NewRegistry(targetDist)
 				statuses, _ := reg.StatusAll(ctx)
 				for _, s := range statuses {
 					if s.Running {
@@ -92,14 +101,16 @@ the verified report when --share is passed (requires LAPEL_COMMUNITY_ENABLED=tru
 			fmt.Println("=== lapel benchmark ===")
 			fmt.Printf("  Hardware: %s | %d GB RAM (hash: %s)\n", gpuLabel, profile.RAM, hash)
 			fmt.Printf("  Target:   %s (%s) — model %q\n", provName, baseURL, modelName)
+			if !noWarmup {
+				fmt.Println("  Warming up model (1 token)...")
+			}
 			fmt.Println("  Running standardized coding prompt...")
 
-			res, err := runProviderBenchmark(ctx, baseURL, modelName, provName, vramGB, batchSize)
+			res, err := runProviderBenchmark(ctx, baseURL, modelName, provName, vramGB, batchSize, !noWarmup)
 			if err != nil {
 				return fmt.Errorf("benchmark probe failed against %s: %w (ensure LM Studio or Ollama is running with a loaded model)", baseURL, err)
 			}
 
-			// Re-sample active GPU VRAM usage while the model is resident in memory.
 			if _, postHW, postErr := buildHardwareProfile(ctx); postErr == nil && postHW != nil && postHW.GPU.VRAMUsedGB > 0 {
 				res.VRAMGB = postHW.GPU.VRAMUsedGB
 				gpuLabel = fmt.Sprintf("%s (%.1f / %.1f GB VRAM)", postHW.GPU.Name, postHW.GPU.VRAMUsedGB, postHW.GPU.VRAMGB)
@@ -140,28 +151,32 @@ the verified report when --share is passed (requires LAPEL_COMMUNITY_ENABLED=tru
 			if share {
 				if !features.IsEnabled(features.CommunityEnabled) {
 					fmt.Println("\nℹ Community sharing is disabled by default (opt-in).")
-					fmt.Println("  Re-run with LAPEL_COMMUNITY_ENABLED=true lapel benchmark --share to publish.")
+					fmt.Println("  Re-run with LAPEL_COMMUNITY_ENABLED=true LAPEL_COMMUNITY_ENDPOINT=<url> lapel benchmark --share to publish.")
 					return nil
 				}
 				targetEndpoint := features.GetEndpoint()
+				if targetEndpoint == "" {
+					return fmt.Errorf("no community endpoint configured; set LAPEL_COMMUNITY_ENDPOINT=<url> (or use --dry-run)")
+				}
 				fmt.Printf("\nPublishing verified benchmark report to %s...\n", targetEndpoint)
 				if err := shareReport(targetEndpoint, report); err != nil {
-					fmt.Printf("⚠ Could not publish to community backend: %v\n", err)
-					return nil
+					return fmt.Errorf("publishing to community backend: %w", err)
 				}
 				fmt.Println("✓ Verified benchmark published!")
 			} else {
-				fmt.Println("\nTip: Pass --share (with LAPEL_COMMUNITY_ENABLED=true) to contribute this benchmark to the community index.")
+				fmt.Println("\nTip: Pass --share (with LAPEL_COMMUNITY_ENABLED=true and LAPEL_COMMUNITY_ENDPOINT) to publish this benchmark.")
 			}
 
 			return nil
 		},
 	}
 
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.Flags().StringVar(&endpointURL, "endpoint", "", "OpenAI-compatible provider base URL (default: auto-detect running provider)")
 	cmd.Flags().StringVar(&modelName, "model", "", "Model identifier to benchmark (default: active provider model)")
 	cmd.Flags().StringVar(&providerStr, "provider", "", "Provider label ('LM Studio' or 'Ollama')")
 	cmd.Flags().IntVar(&batchSize, "batch-size", 16, "Configured physical batch size metadata")
+	cmd.Flags().BoolVar(&noWarmup, "no-warmup", false, "skip the 1-token warmup request before timing")
 	cmd.Flags().BoolVar(&share, "share", false, "Submit the measured benchmark report to the community backend (opt-in)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the measured JSON report payload without submitting")
 
@@ -171,14 +186,37 @@ the verified report when --share is passed (requires LAPEL_COMMUNITY_ENABLED=tru
 // benchmarkHTTPClient is the HTTP client used by runProviderBenchmark (overridable in tests).
 var benchmarkHTTPClient = &http.Client{Timeout: 60 * time.Second}
 
-// runProviderBenchmark sends a standardized chat completion request to baseURL
-// and measures actual token throughput.
-func runProviderBenchmark(ctx context.Context, baseURL, modelName, providerName string, vramGB float64, batchSize int) (*BenchmarkResult, error) {
+func completionURL(baseURL string) string {
 	url := strings.TrimRight(baseURL, "/")
 	if !strings.HasSuffix(url, "/v1") {
 		url += "/v1"
 	}
-	url += "/chat/completions"
+	return url + "/chat/completions"
+}
+
+// runProviderBenchmark sends an optional 1-token warmup request (to exclude
+// connection setup and cold model loading from the timed sample), then sends a
+// standardized chat completion request to baseURL and measures token throughput.
+func runProviderBenchmark(ctx context.Context, baseURL, modelName, providerName string, vramGB float64, batchSize int, warmup bool) (*BenchmarkResult, error) {
+	url := completionURL(baseURL)
+
+	if warmup {
+		warmupBody, _ := json.Marshal(map[string]any{
+			"model": modelName,
+			"messages": []map[string]string{
+				{"role": "user", "content": "hi"},
+			},
+			"max_tokens":  1,
+			"temperature": 0,
+			"stream":      false,
+		})
+		if wreq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(warmupBody)); err == nil {
+			wreq.Header.Set("Content-Type", "application/json")
+			if wresp, err := benchmarkHTTPClient.Do(wreq); err == nil {
+				_ = wresp.Body.Close()
+			}
+		}
+	}
 
 	reqBody := map[string]any{
 		"model": modelName,
@@ -233,7 +271,6 @@ func runProviderBenchmark(ctx context.Context, baseURL, modelName, providerName 
 
 	tokens := parsed.Usage.CompletionTokens
 	if tokens <= 0 && len(parsed.Choices) > 0 {
-		// Estimate tokens (~4 chars/token) if the server omits usage.completion_tokens.
 		content := strings.TrimSpace(parsed.Choices[0].Message.Content)
 		tokens = (len(content) + 3) / 4
 		if tokens == 0 && len(content) > 0 {

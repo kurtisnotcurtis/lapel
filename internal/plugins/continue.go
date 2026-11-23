@@ -35,7 +35,7 @@ func (p *ContinuePlugin) ConfigPath() string {
 	return filepath.Join(userHomeDir(), ".continue", "config.json")
 }
 
-func (p *ContinuePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error) {
+func buildContinueEntries(providers []ProviderSpec) []ContinueProvider {
 	var entries []ContinueProvider
 	for _, prov := range providers {
 		provType := "openai"
@@ -53,18 +53,59 @@ func (p *ContinuePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error
 			})
 		}
 	}
+	return entries
+}
 
+func (p *ContinuePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error) {
 	cfg := ContinueConfig{
 		Version:   "1.0",
-		Providers: entries,
+		Providers: buildContinueEntries(providers),
 	}
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
+// Apply merges lapel's discovered local provider entries into ~/.continue/config.json,
+// preserving existing unrelated settings and non-colliding providers, and creates a
+// .bak backup before modifying an existing file.
 func (p *ContinuePlugin) Apply(providers []ProviderSpec) (string, error) {
-	data, err := p.GenerateConfig(providers)
+	target := p.ConfigPath()
+	existing, err := readExistingJSONObject(target)
 	if err != nil {
 		return "", err
 	}
-	return writeConfigFile(p.ConfigPath(), data)
+
+	newEntries := buildContinueEntries(providers)
+	incomingKeys := make(map[string]bool, len(newEntries))
+	for _, e := range newEntries {
+		incomingKeys[e.Title+"|"+e.APIBase] = true
+	}
+
+	// Preserve existing providers that don't collide with the freshly synced entries.
+	var merged []any
+	if rawList, ok := existing["providers"].([]any); ok {
+		for _, item := range rawList {
+			if m, ok := item.(map[string]any); ok {
+				title, _ := m["title"].(string)
+				apiBase, _ := m["apiBase"].(string)
+				if incomingKeys[title+"|"+apiBase] {
+					continue
+				}
+			}
+			merged = append(merged, item)
+		}
+	}
+	for _, e := range newEntries {
+		merged = append(merged, e)
+	}
+
+	if _, ok := existing["version"]; !ok {
+		existing["version"] = "1.0"
+	}
+	existing["providers"] = merged
+
+	data, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return writeConfigFile(target, data)
 }

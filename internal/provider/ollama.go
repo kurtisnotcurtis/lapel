@@ -72,9 +72,9 @@ func (o *Ollama) Status(ctx context.Context) (*ProviderStatus, error) {
 	return status, nil
 }
 
-// Start is a no-op for Ollama since it runs as a background service on Windows.
+// Start returns an actionable error because Ollama runs as a host service on Windows.
 func (o *Ollama) Start(ctx context.Context) error {
-	return nil
+	return fmt.Errorf("Ollama is not running; start the Ollama app or run `ollama serve` on the Windows host")
 }
 
 // Stop stops the Ollama server.
@@ -95,7 +95,7 @@ func (o *Ollama) ListModels(ctx context.Context) ([]string, error) {
 func (o *Ollama) fetchModelsHTTP(ctx context.Context, port int) ([]string, error) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	var lastErr error
-	for _, base := range candidateBaseURLs(ctx, port) {
+	for _, base := range candidateBaseURLs(ctx, o.dist, port) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/api/tags", nil)
 		if err != nil {
 			lastErr = err

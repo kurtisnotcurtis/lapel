@@ -58,10 +58,10 @@ func TestPathResolver_GuestToHost(t *testing.T) {
 	r := NewPathResolver()
 
 	tests := []struct {
-		name     string
+		name      string
 		guestPath string
-		want     string
-		wantErr  bool
+		want      string
+		wantErr   bool
 	}{
 		{
 			name:      "standard mount path",
@@ -146,5 +146,24 @@ func TestNormalize(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("Normalize(%q) = %v, want %v", tt.input, got, tt.want)
 		}
+	}
+}
+
+func TestValidateWorkspaceNameAndQuoting(t *testing.T) {
+	for _, good := range []string{"project", "my-repo_1.0"} {
+		if err := ValidateWorkspaceName(good); err != nil {
+			t.Errorf("ValidateWorkspaceName(%q) unexpected error: %v", good, err)
+		}
+	}
+	for _, bad := range []string{"", "../etc", "a/b", `a\b`, "foo;rm -rf /", "$(id)"} {
+		if err := ValidateWorkspaceName(bad); err == nil {
+			t.Errorf("ValidateWorkspaceName(%q) expected error, got nil", bad)
+		}
+	}
+
+	script := buildCopyScript("/mnt/c/Users/$(id)/proj", "/home/agent/workspace/proj")
+	want := "mkdir -p '/home/agent/workspace/proj' && rsync -a --delete '/mnt/c/Users/$(id)/proj'/ '/home/agent/workspace/proj'/"
+	if script != want {
+		t.Errorf("buildCopyScript =\n  %q\nwant\n  %q", script, want)
 	}
 }

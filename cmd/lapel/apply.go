@@ -1,12 +1,8 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -15,57 +11,29 @@ import (
 	"lapel/internal/config"
 	"lapel/internal/jail"
 	"lapel/internal/reconcile"
-	"lapel/internal/state"
 	"lapel/internal/workspace"
 )
 
-// defaultStatePath returns the default on-disk location for the state database,
-// nested under a project-local .lapel directory so it is not confused with
-// the manifest.
-func defaultStatePath() (string, error) {
-	dir := filepath.Join(".", ".lapel")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("creating state dir: %w", err)
-	}
-	return filepath.Join(dir, "state.db"), nil
-}
-
-// openState opens the state store at path (or the default when empty).
-func openState(path string) (*state.Store, error) {
-	if path == "" {
-		p, err := defaultStatePath()
-		if err != nil {
-			return nil, err
-		}
-		path = p
-	}
-	return state.New(path)
-}
-
-// applyCmd persists the desired-state baseline from the effective manifest into
-// the state store and reports current live status. Re-running it updates the
-// stored baseline to match the manifest; diff/status then report drift against
-// that committed reference.
+// applyCmd reconciles live state toward the effective lapel.yaml manifest:
+// provisioning the WSL distribution, importing the workspace, optionally
+// syncing VS Code plugins, and printing the resulting live status.
 func applyCmd() *cobra.Command {
 	var (
 		manifestPath  string
-		statePath     string
 		pluginName    string
 		syncAll       bool
+		allowFallback bool
 		skipProvision bool
 	)
 	cmd := &cobra.Command{
 		Use:   "apply",
-		Short: "Provision environment, import workspace, sync VS Code plugins, and persist baseline",
+		Short: "Provision environment, import workspace, and optionally sync VS Code plugins",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			if err := os.MkdirAll(".", 0o755); err != nil { // allow manifest discovery in cwd
-				return fmt.Errorf("creating work dir: %w", err)
-			}
 
 			// Sync VS Code plugins when --plugin or --all is requested.
 			if pluginName != "" || syncAll {
-				if err := syncPlugins(ctx, pluginName, syncAll); err != nil {
+				if err := syncPlugins(ctx, "", pluginName, syncAll, allowFallback); err != nil {
 					return err
 				}
 			}
@@ -79,189 +47,94 @@ func applyCmd() *cobra.Command {
 				return err
 			}
 
+			targetDist := reconcile.EnvName(m)
+
 			// Provision WSL environment if available and not skipped.
 			if !skipProvision {
-				b := &wsl.DistBackend{}
-				if det, err := b.Detect(ctx); err == nil && det.Available {
-					fmt.Printf("Ensuring environment %q is provisioned...\n", reconcile.EnvName(m))
+				b := wsl.NewBackend(targetDist)
+				det, err := b.Detect(ctx)
+				if err != nil {
+					return fmt.Errorf("detecting WSL backend: %w", err)
+				}
+				if det.Available {
+					fmt.Printf("Ensuring environment %q is provisioned...\n", targetDist)
 					if err := b.Provision(ctx, m.EnvSpec()); err != nil {
-						fmt.Printf("warning (%v)\n", err)
-					} else {
-						fmt.Printf("  ✓ Environment %q provisioned\n", reconcile.EnvName(m))
+						return fmt.Errorf("provisioning environment %q: %w", targetDist, err)
 					}
+					fmt.Printf("  ✓ Environment %q provisioned\n", targetDist)
 				}
 			}
 
-			st, err := openState(statePath)
-			if err != nil {
-				return fmt.Errorf("opening state store: %w", err)
+			// Import workspace if needed.
+			wsName := m.Workspace.Name
+			if wsName == "" {
+				wsName = "workspace"
 			}
-			defer st.Close()
-
-			res, err := reconcile.Diff(ctx, m, reconcile.NewOptions(ctx))
-			if err != nil {
-				return fmt.Errorf("reconciling: %w", err)
+			wsPath := m.Workspace.Path
+			if wsPath == "" {
+				wsPath = "."
 			}
-
-			// Import workspace if needed (copy mode by default).
-			wsManager := workspace.NewManager(m.Jail.User)
+			wsManager := workspace.NewManager(targetDist, m.Jail.User)
 			importMode := workspace.ImportMode(m.Workspace.ImportMode)
 			if importMode == "" {
 				importMode = workspace.DefaultMode()
 			}
 
-			// Perform import if the workspace doesn't exist yet.
-			if !wsManager.Exists(m.Workspace.Name, importMode) {
-				fmt.Printf("Importing workspace %q (mode: %s)... ", m.Workspace.Name, importMode)
-				_, err := wsManager.Import(m.Workspace.Path, m.Workspace.Name, importMode)
-				if err != nil {
+			if !wsManager.Exists(wsName, importMode) {
+				fmt.Printf("Importing workspace %q (mode: %s)... ", wsName, importMode)
+				if _, err := wsManager.Import(wsPath, wsName, importMode); err != nil {
 					return fmt.Errorf("importing workspace: %w", err)
 				}
 				fmt.Printf("OK\n")
 			} else {
-				fmt.Printf("Workspace %q already exists (mode: %s)\n", m.Workspace.Name, importMode)
+				fmt.Printf("Workspace %q already exists (mode: %s)\n", wsName, importMode)
 			}
 
-			// Persist the desired baseline (spec + content hash) for each resource.
-			persisted, err := persistBaseline(st, m)
+			res, err := reconcile.Diff(ctx, m, reconcile.NewOptions(ctx, targetDist))
 			if err != nil {
-				return fmt.Errorf("persisting baseline: %w", err)
+				return fmt.Errorf("reconciling: %w", err)
 			}
 
-			fmt.Printf("\nApplied baseline for %q (%s)\n", m.Name, m.APIVersion)
-			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "\tKIND\tNAME\tDESIRED_HASH")
-			for _, p := range persisted {
-				fmt.Fprintf(w, "\t%s\t%s\t%s\n", p.Kind, p.Name, shortHash(p.DesiredHash))
-			}
-			w.Flush()
-
-			// Report provider type if specified.
+			fmt.Printf("\nApplied manifest %q (%s)\n", m.Name, m.APIVersion)
 			if m.Provider.Type != "" {
-				fmt.Printf("\nProvider type: %s\n", m.Provider.Type)
+				fmt.Printf("Provider type: %s\n", m.Provider.Type)
 			}
-
 			fmt.Println("\nCurrent live status:")
 			printDiff(res)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&manifestPath, "manifest", "", "path to lapel.yaml (default: discover in cwd/ancestors)")
-	cmd.Flags().StringVar(&statePath, "state", "", "path to state database (default: ./.lapel/state.db)")
 	cmd.Flags().StringVar(&pluginName, "plugin", "", "sync VS Code plugin configuration (kilo-code, continue, cline, or all)")
 	cmd.Flags().BoolVar(&syncAll, "all", false, "sync configurations for all supported VS Code plugins")
+	cmd.Flags().BoolVar(&allowFallback, "allow-fallback", false, "allow generating a fallback placeholder model config if no provider is running")
 	cmd.Flags().BoolVar(&skipProvision, "skip-provision", false, "skip WSL distro provisioning step")
 	return cmd
 }
 
-// persistBaseline records the desired baseline for each managed resource and
-// returns what was written so the caller can report it.
-func persistBaseline(st *state.Store, m *config.Manifest) ([]*state.DesiredResource, error) {
-	type target struct {
-		kind     string
-		name     string
-		specJSON string
-	}
-	targets := []target{
-		{state.KindEnvironment, reconcile.EnvName(m), reconcile.CanonicalSpec(m.Environment)},
-		{state.KindProvider, m.Provider.Name, reconcile.CanonicalSpec(m.Provider)},
-		{state.KindWorkspace, m.Workspace.Name, reconcile.CanonicalSpec(m.Workspace)},
-	}
-	var out []*state.DesiredResource
-	for _, t := range targets {
-		if err := st.SetDesired(t.kind, t.name, t.specJSON, reconcile.HashSpecFromJSON(t.specJSON)); err != nil {
-			return nil, err
-		}
-		out = append(out, &state.DesiredResource{Kind: t.kind, Name: t.name, DesiredHash: reconcile.HashSpecFromJSON(t.specJSON)})
-	}
-	return out, nil
-}
-
-// statusCmd compares current live reality against the persisted desired baseline.
-// It reports drift over time independent of any manifest file currently present.
+// statusCmd inspects live environment, provider, and workspace state against
+// the effective lapel.yaml manifest without exiting non-zero on drift.
 func statusCmd() *cobra.Command {
-	var statePath string
+	var manifestPath string
 	cmd := &cobra.Command{
-		Use:    "status",
-		Short:  "Report drift between live state and the persisted desired baseline",
+		Use:   "status",
+		Short: "Report live status of environment, provider, and workspace against lapel.yaml",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			st, err := openState(statePath)
+			m, err := config.LoadEffective(manifestPath)
 			if err != nil {
-				return fmt.Errorf("opening state store: %w", err)
+				return err
 			}
-			defer st.Close()
-
-			baselines, err := st.DesiredResources()
+			res, err := reconcile.Diff(ctx, m, reconcile.NewOptions(ctx, reconcile.EnvName(m)))
 			if err != nil {
-				return fmt.Errorf("reading baselines: %w", err)
+				return fmt.Errorf("checking live status: %w", err)
 			}
-			opts := reconcile.NewOptions(ctx)
-
-			fmt.Println("Drift against persisted desired baseline:")
-			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(w, "\tKIND\tNAME\tSTATUS\tACTUAL")
-			for _, b := range baselines {
-				status, actual := probeBaseline(ctx, opts, b)
-				desired := "OK"
-				if status != "OK" {
-					desired = "DRIFT"
-				}
-				fmt.Fprintf(w, "\t%s\t%s\t%s\t%s\n", desired, b.Kind, b.Name, actual+" ("+status+")")
-			}
-			w.Flush()
+			printDiff(res)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&statePath, "state", "", "path to state database (default: ./.lapel/state.db)")
+	cmd.Flags().StringVar(&manifestPath, "manifest", "", "path to lapel.yaml (default: discover in cwd/ancestors)")
 	return cmd
-}
-
-// probeBaseline reconstructs a resource's declared spec from its stored JSON and
-// runs the matching default probe, returning a live status label ("OK"/"DRIFT")
-// and a human-readable description.
-func probeBaseline(ctx context.Context, opts reconcile.Options, b *state.DesiredResource) (status, actual string) {
-	switch b.Kind {
-	case state.KindEnvironment:
-		var cfg config.Environment
-		if err := json.Unmarshal([]byte(b.SpecJSON), &cfg); err != nil {
-			return "DRIFT", "unreadable spec: " + err.Error()
-		}
-		st, err := opts.EnvProber(ctx, cfg)
-		if err != nil {
-			return "DRIFT", "probe error: " + err.Error()
-		}
-		ok := st.Exists && (cfg.Distribution == "" || strings.EqualFold(st.Distribution, cfg.Distribution))
-		if !ok {
-			return "DRIFT", reconcile.DescribeEnv(st)
-		}
-		return "OK", reconcile.DescribeEnv(st)
-	case state.KindProvider:
-		var cfg config.Provider
-		if err := json.Unmarshal([]byte(b.SpecJSON), &cfg); err != nil {
-			return "DRIFT", "unreadable spec: " + err.Error()
-		}
-		reachable, note := opts.ProviderProbe(cfg)
-		if !reachable {
-			return "DRIFT", note
-		}
-		return "OK", note
-	case state.KindWorkspace:
-		var cfg config.Workspace
-		if err := json.Unmarshal([]byte(b.SpecJSON), &cfg); err != nil {
-			return "DRIFT", "unreadable spec: " + err.Error()
-		}
-		exists, err := opts.WorkspaceExists(cfg)
-		if err != nil {
-			return "DRIFT", "probe error: " + err.Error()
-		}
-		if !exists {
-			return "DRIFT", reconcile.DescribeWorkspace(cfg, false)
-		}
-		return "OK", reconcile.DescribeWorkspace(cfg, true)
-	default:
-		return "DRIFT", "unknown kind"
-	}
 }
 
 // jailControlsCmd reports the enforcement controls active for a given profile.
@@ -272,7 +145,7 @@ func jailControlsCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:    "jail-controls",
-		Short:  "Show jail enforcement controls and their status",
+		Short:  "Show jail enforcement controls and their honest enforcement level",
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cwd, err := os.Getwd()
@@ -302,13 +175,6 @@ func jailControlsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&user, "user", "agent", "Linux user for jail context")
-	cmd.Flags().IntVar(&timeout, "timeout", 300, "Process timeout in seconds")
+	cmd.Flags().IntVar(&timeout, "timeout", 0, "Process timeout in seconds (0 = disabled)")
 	return cmd
-}
-
-func shortHash(h string) string {
-	if len(h) > 12 {
-		return h[:12]
-	}
-	return h
 }

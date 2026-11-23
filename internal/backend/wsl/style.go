@@ -49,7 +49,7 @@ type ResolvedStyle struct {
 // a domain.EnvironmentStyle spec, applying preset defaults and any overrides.
 func ResolveStyle(distro string, spec domain.EnvironmentStyle) ResolvedStyle {
 	if strings.TrimSpace(distro) == "" {
-		distro = Dist
+		distro = DefaultDist
 	}
 	preset := strings.ToLower(strings.TrimSpace(spec.Preset))
 	if preset == "" {
@@ -120,7 +120,9 @@ func ResolveStyle(distro string, spec domain.EnvironmentStyle) ResolvedStyle {
 	return res
 }
 
-// sanitizeBadge strips control characters and newlines from a prompt badge.
+// sanitizeBadge strips control characters and shell/prompt expansion characters
+// so untrusted manifest values can never trigger command substitution, variable
+// expansion, or escape-sequence injection inside bash PS1.
 func sanitizeBadge(s string) string {
 	s = strings.TrimSpace(s)
 	var b strings.Builder
@@ -128,9 +130,13 @@ func sanitizeBadge(s string) string {
 		if r < 32 || r == 127 {
 			continue
 		}
+		switch r {
+		case '$', '`', '\\', '"', '\'':
+			continue
+		}
 		b.WriteRune(r)
 	}
-	return b.String()
+	return strings.TrimSpace(b.String())
 }
 
 // BuildShellStyleScript generates the /etc/profile.d/95-lapel-style.sh content
@@ -141,34 +147,44 @@ func BuildShellStyleScript(style ResolvedStyle) string {
 		return ""
 	}
 
+	safeBadge := sanitizeBadge(style.Badge)
+	safeDistro := sanitizeBadge(style.Distro)
+	if safeDistro == "" {
+		safeDistro = DefaultDist
+	}
+
+	label := "lapel"
+	title := "lapel"
+	if safeBadge != "" && !strings.EqualFold(safeBadge, "lapel") {
+		label = "lapel:" + safeBadge
+		title = "lapel (" + safeBadge + ")"
+	}
+
 	var b strings.Builder
 	b.WriteString("#!/bin/bash\n")
 	b.WriteString("# Managed by lapel — visual prompt and banner for WSL sessions.\n")
 	b.WriteString("case $- in\n  *i*) ;;\n  *) return ;;\nesac\n\n")
 
-	fmt.Fprintf(&b, "_LAPEL_BADGE=%s\n", shellQuote(style.Badge))
-	fmt.Fprintf(&b, "_LAPEL_DISTRO=%s\n", shellQuote(style.Distro))
+	fmt.Fprintf(&b, "_LAPEL_BADGE=%s\n", shellQuote(safeBadge))
+	fmt.Fprintf(&b, "_LAPEL_DISTRO=%s\n", shellQuote(safeDistro))
 	fmt.Fprintf(&b, "_LAPEL_PRESET=%s\n\n", shellQuote(style.Preset))
 
 	b.WriteString(`_lapel_jail_tag=""
 if [ -n "${JAIL_TIMEOUT:-}" ]; then
-  _lapel_jail_tag=" \[\e[1;33m\][jail]\[\e[0m\]"
-fi
-_lapel_label="lapel"
-_lapel_title="lapel"
-if [ -n "${_LAPEL_BADGE}" ] && [ "${_LAPEL_BADGE}" != "lapel" ] && [ "${_LAPEL_BADGE}" != "Lapel" ]; then
-  _lapel_label="lapel:${_LAPEL_BADGE}"
-  _lapel_title="lapel (${_LAPEL_BADGE})"
+  _lapel_jail_tag=' \[\e[1;33m\][jail]\[\e[0m\]'
 fi
 `)
 
+	// Embed sanitized literal title/label inside single-quoted PS1 segments so
+	// bash never performs command substitution or parameter expansion on badge
+	// values, even with promptvars enabled.
 	switch style.Preset {
 	case PresetViolet:
-		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;97;45m\] ⚡ ${_lapel_label} \[\e[0m\]${_lapel_jail_tag} \[\e[1;95m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;95m\]▸\[\e[0m\] "` + "\n")
+		fmt.Fprintf(&b, `export PS1='\[\e]0;%s: \w\a\]\[\e[1;97;45m\] ⚡ %s \[\e[0m\]'"${_lapel_jail_tag}"' \[\e[1;95m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;95m\]▸\[\e[0m\] '`+"\n", title, label)
 	case PresetMinimal:
-		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;36m\][${_lapel_label}]\[\e[0m\]${_lapel_jail_tag} \u@\h:\w\$ "` + "\n")
+		fmt.Fprintf(&b, `export PS1='\[\e]0;%s: \w\a\]\[\e[1;36m\][%s]\[\e[0m\]'"${_lapel_jail_tag}"' \u@\h:\w\$ '`+"\n", title, label)
 	default: // PresetLapelDark
-		b.WriteString(`export PS1="\[\e]0;${_lapel_title}: \w\a\]\[\e[1;30;46m\] ⚡ ${_lapel_label} \[\e[0m\]${_lapel_jail_tag} \[\e[1;36m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;36m\]▸\[\e[0m\] "` + "\n")
+		fmt.Fprintf(&b, `export PS1='\[\e]0;%s: \w\a\]\[\e[1;30;46m\] ⚡ %s \[\e[0m\]'"${_lapel_jail_tag}"' \[\e[1;36m\]\u\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\] \[\e[1;36m\]▸\[\e[0m\] '`+"\n", title, label)
 	}
 
 	if style.Banner {
@@ -532,7 +548,7 @@ func applyWindowsTerminalFragmentAt(fragPath, distro string, spec domain.Environ
 // stock Ubuntu's PS1.
 func ApplyDistroStyle(ctx context.Context, distro, user string, spec domain.EnvironmentStyle) error {
 	if distro == "" {
-		distro = Dist
+		distro = DefaultDist
 	}
 	style := ResolveStyle(distro, spec)
 

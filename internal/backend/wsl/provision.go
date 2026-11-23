@@ -97,32 +97,33 @@ type ProvisionOptions struct {
 	Style domain.EnvironmentStyle
 }
 
-// DefaultProvisionOptions derives generic options from an environment spec. the
-// distribution name and a base image family inferred from RootFSImage (falling
-// back to Ubuntu). It always installs the agent-toolkit baseline.
+// DefaultProvisionOptions derives generic options from an environment spec.
+// It always installs the agent-toolkit baseline plus any extra packages.
 func DefaultProvisionOptions(spec domain.Environment) ProvisionOptions {
-	base := "ubuntu"
-	if strings.Contains(strings.ToLower(spec.RootFSImage), "debian") {
-		base = "debian"
+	base := strings.ToLower(strings.TrimSpace(spec.Base))
+	if base == "" {
+		base = "ubuntu"
 	}
-	name := spec.Name
+	name := strings.TrimSpace(spec.Name)
 	if name == "" {
-		name = Dist
+		name = strings.TrimSpace(spec.Distribution)
+	}
+	if name == "" {
+		name = DefaultDist
 	}
 	var keyPath string
 	if home, err := os.UserHomeDir(); err == nil {
 		keyPath = filepath.Join(home, ".ssh", "id_ed25519.pub")
 	}
 	// Prefer $USER (Unix), fall back to %USERNAME% (Windows) so the imported
-	// distro starts with a non-root default user on either side. Linux login
-	// names are case-sensitive and conventionally lowercase — normalise the
-	// Windows USERNAME value to lower-case so `useradd Alice` does not leave us
-	// with a mismatched "Alice" vs "alice" later in the SSH step.
-	user := os.Getenv("USER")
-	if user == "" {
-		user = os.Getenv("USERNAME")
+	// distro starts with a non-root default user on either side. Normalize
+	// Windows usernames (which may contain uppercase letters, dots, or spaces)
+	// into a valid POSIX login name.
+	rawUser := os.Getenv("USER")
+	if rawUser == "" {
+		rawUser = os.Getenv("USERNAME")
 	}
-	user = strings.ToLower(user)
+	user := sanitizeDefaultUsername(rawUser)
 	pkgs := append([]string{}, AgentToolkitPackages...)
 	seen := make(map[string]bool, len(pkgs))
 	for _, p := range pkgs {
@@ -138,7 +139,7 @@ func DefaultProvisionOptions(spec domain.Environment) ProvisionOptions {
 	return ProvisionOptions{
 		Name:             name,
 		Base:             base,
-		Version:          "",
+		Version:          strings.TrimSpace(spec.Version),
 		Packages:         pkgs,
 		EnsurePackages:   true,
 		DefaultUser:      user,
@@ -146,6 +147,42 @@ func DefaultProvisionOptions(spec domain.Environment) ProvisionOptions {
 		Systemd:          spec.Systemd,
 		Style:            spec.Style,
 	}
+}
+
+// sanitizeDefaultUsername turns an arbitrary host username (e.g. "John.Doe" or
+// "Alice Smith") into a valid lowercase POSIX username. Returns "" when raw is
+// empty so callers can decide whether to skip default-user setup.
+func sanitizeDefaultUsername(raw string) string {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	if raw == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range raw {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			if b.Len() == 0 {
+				b.WriteByte('u')
+			}
+			b.WriteRune(r)
+		case r == '_' || r == '-':
+			if b.Len() == 0 && r == '-' {
+				b.WriteByte('u')
+			}
+			b.WriteRune(r)
+		case r == '.' || r == ' ':
+			if b.Len() > 0 {
+				b.WriteByte('_')
+			}
+		}
+	}
+	out := strings.TrimRight(b.String(), "_-")
+	if out == "" {
+		return "lapel"
+	}
+	return out
 }
 
 // WSLBuildThreshold is the Windows build number from which [interop]
@@ -185,12 +222,8 @@ func detectWSLBuild(ctx context.Context) int {
 }
 
 // RootfsURL returns the canonical URL of an official ext4 rootfs tarball for
-// the given base image family and version. Ubuntu uses the cloud-images
-// rootfs; Debian uses its cloud release portal. The URLs are
-// correct-by-construction and can be overridden per-distro via
-// ProvisionOptions.RootFSImageOverride when a specific mirror/version is
-// needed. Note: WSL's --import (verified on 3.0.3.0) does not accept URLs —
-// the tarball must be downloaded to disk first (see downloadRootfs).
+// the given base image family and version. Note: WSL's --import does not accept
+// URLs — the tarball must be downloaded to disk first (see downloadRootfs).
 func RootfsURL(base, version string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(base)) {
 	case "", "ubuntu":
@@ -200,24 +233,17 @@ func RootfsURL(base, version string) (string, error) {
 		codename, ok := ubuntuCodenames[version]
 		if !ok {
 			return "", fmt.Errorf(
-				"no known cloud-images codename for Ubuntu %s; pass ProvisionOptions.RootFSImageOverride with a rootfs archive URL or path",
+				"unsupported Ubuntu version %q (supported: 20.04, 22.04, 24.04, 25.10, 26.04)",
 				version)
 		}
-		// Verified 2026-11: the numeric /releases/<ver>/release/ tree is dead
-		// (302s to a 404) and the old cloudimg-amd64 layout was retired; only
-		// the codename trees host rootfs archives. WSL's importer (bsdtar)
-		// reads .tar.xz directly, so no re-compression is needed.
 		return fmt.Sprintf(
 			"https://cloud-images.ubuntu.com/%s/current/%s-server-cloudimg-amd64-root.tar.xz",
 			codename, codename), nil
 	case "debian":
-		// Debian no longer publishes WSL-importable rootfs tarballs — its cloud
-		// mirrors (bookworm and trixie, checked 2026-07) only ship full disk
-		// images (qcow2/raw/tar.xz), which wsl --import cannot consume.
 		return "", fmt.Errorf(
-			"Debian no longer publishes WSL-importable rootfs tarballs; pass ProvisionOptions.RootFSImageOverride pointing to a rootfs archive")
+			"Debian does not publish WSL-importable cloud rootfs tarballs; use base: ubuntu")
 	default:
-		return "", fmt.Errorf("unsupported base %q (want ubuntu|debian)", base)
+		return "", fmt.Errorf("unsupported base %q (want ubuntu)", base)
 	}
 }
 
@@ -227,30 +253,18 @@ func DefaultVersion(base string) string {
 	case "", "ubuntu":
 		return "24.04" // latest LTS — stable on WSL
 	default:
-		return "12" // Debian stable (bookworm)
+		return "12"
 	}
 }
 
 // ubuntuCodenames maps Ubuntu version numbers to their codenames for
-// building cloud-images.ubuntu.com rootfs URLs (verified live 2026-11).
+// building cloud-images.ubuntu.com rootfs URLs.
 var ubuntuCodenames = map[string]string{
 	"20.04": "focal",
 	"22.04": "jammy",
 	"24.04": "noble",
 	"25.10": "questing",
 	"26.04": "resolute",
-}
-
-// codenameForDebian maps a Debian numeric release to its codename.
-func codenameForDebian(version string) string {
-	switch version {
-	case "11":
-		return "bullseye"
-	case "12", "13":
-		return "bookworm"
-	default:
-		return "bookworm" // default to current stable codename
-	}
 }
 
 // ImportMinimalDistro downloads the official rootfs tarball and imports it as a
@@ -260,7 +274,7 @@ func codenameForDebian(version string) string {
 // re-downloading or re-importing.
 func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 	if opts.Name == "" {
-		opts.Name = Dist
+		opts.Name = DefaultDist
 	}
 	base := strings.ToLower(strings.TrimSpace(opts.Base))
 	switch base {
@@ -269,7 +283,19 @@ func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 	case "debian":
 		opts.Base = "debian"
 	default:
-		return fmt.Errorf("unsupported base %q (want ubuntu|debian)", opts.Base)
+		return fmt.Errorf("unsupported base %q (want ubuntu)", opts.Base)
+	}
+
+	// Validate the default user BEFORE downloading or importing so an invalid
+	// username never leaves behind a half-initialized distro.
+	defaultUser := strings.TrimSpace(opts.DefaultUser)
+	if defaultUser == "" {
+		defaultUser = sanitizeDefaultUsername(os.Getenv("USER"))
+	}
+	if defaultUser != "" {
+		if err := validateUsername(defaultUser); err != nil {
+			return fmt.Errorf("invalid default user %q: %w", defaultUser, err)
+		}
 	}
 
 	url, err := RootfsURL(opts.Base, opts.Version)
@@ -287,53 +313,31 @@ func ImportMinimalDistro(ctx context.Context, opts ProvisionOptions) error {
 		}
 	}
 
-	// The VHDX container must live on a persistent NTFS directory WSL can write
-	// to (%LOCALAPPDATA%\lapel\distros\<name>). `wsl --import` runs on the host
-	// and requires Windows paths for both the install location and the archive —
-	// a /mnt/c/... path fails at HCS with 0x800704b0 (verified 2026-11).
 	installLoc, err := DistroStorageDir(opts.Name)
 	if err != nil {
 		return fmt.Errorf("creating distro storage dir %s: %w", installLoc, err)
 	}
 
-	// WSL's --import only accepts a local archive path — passing the URL
-	// directly fails with Wsl/ERROR_INVALID_NAME (verified on 3.0.3.0) — so
-	// download the rootfs first, then import from disk. The archive is removed
-	// afterwards; the VHDX container stays in installLoc.
 	fmt.Printf("  • Downloading %s rootfs from %s...\n", opts.Base, url)
 	archive, err := downloadRootfs(ctx, url, installLoc)
 	if err != nil {
-		// Clean up the import directory on download failure to avoid orphan containers
 		os.RemoveAll(installLoc)
 		return fmt.Errorf("downloading rootfs %s: %w", url, err)
 	}
 	defer os.Remove(archive)
-	// --import is a GLOBAL flag: it cannot be combined with -d (WSL rejects the
-	// combination), so route through runWslGlobal.
+
 	fmt.Printf("  • Importing %q into %s (this may take 15-30s)...\n", opts.Name, installLoc)
 	if _, err := runWslGlobal(ctx, "--import", opts.Name, installLoc, archive); err != nil {
-		// Clean up the import directory on import failure to avoid orphan containers
 		os.RemoveAll(installLoc)
 		return fmt.Errorf("importing %s from %s: %w", opts.Name, archive, err)
 	}
 
-	// Cloud images have no non-root user and no password logins. Create the
-	// default user (with passwordless sudo for later provisioning steps) and a
-	// durable /etc/wsl.conf BEFORE switching the default user: until that
-	// switch, every `wsl -d <name>` call still runs as root, which is what the
-	// setup script needs.
-	defaultUser := opts.DefaultUser
-	if defaultUser == "" {
-		defaultUser = os.Getenv("USER")
-	}
 	if defaultUser != "" {
 		systemdEnabled := opts.Systemd == nil || *opts.Systemd
 		fmt.Printf("  • Configuring user %q, /etc/wsl.conf (systemd=%v), and DNS in %q...\n", defaultUser, systemdEnabled, opts.Name)
 		if err := setupFreshDistro(ctx, opts.Name, defaultUser, systemdEnabled); err != nil {
 			return fmt.Errorf("setting up fresh distro %s: %w", opts.Name, err)
 		}
-		// --set-default-user is a --manage option, NOT a top-level flag (WSL
-		// 3.0.3.0 rejects `wsl --set-default-user` as an invalid argument).
 		if _, err := runWslGlobal(ctx, "--manage", opts.Name, "--set-default-user", defaultUser); err != nil {
 			return fmt.Errorf("setting default user for %s: %w", opts.Name, err)
 		}
@@ -510,12 +514,13 @@ if ! id -u %s >/dev/null 2>&1; then
   getent group sudo >/dev/null || groupadd sudo
   useradd -m -s /bin/bash -G sudo %s
 fi
-# Ensure the dedicated non-root 'agent' user also exists for jailed sessions
+# Ensure the dedicated unprivileged 'agent' user exists for jailed sessions (no sudo access)
 if ! id -u agent >/dev/null 2>&1; then
   useradd -m -s /bin/bash agent
 fi
-# Passwordless sudo for common provisioning commands (more restrictive than ALL)
-echo %s " ALL=(ALL) NOPASSWD: /usr/bin/apt-get, /usr/bin/systemctl, /usr/sbin/useradd, /usr/sbin/usermod, /bin/chmod, /bin/chown, /bin/mkdir, /usr/bin/tee, /bin/bash" > /etc/sudoers.d/90-lapel-%s
+# Passwordless sudo for the default admin user so lapel provisioning can run root scripts
+# (the separate 'agent' user is NOT in sudo and has no sudoers entry).
+echo %s " ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/90-lapel-%s
 chmod 440 /etc/sudoers.d/90-lapel-%s
 if [ -f /etc/wsl.conf ]; then cp /etc/wsl.conf /etc/wsl.conf.lapel-bak; fi
 %scat > /etc/wsl.conf <<'WSLCONF'
@@ -734,7 +739,7 @@ fnm install --lts`
 // provisionDistro orchestrates import-if-missing then baseline-install for the
 // given options. When the distro already exists it installs packages only when
 // opts.EnsurePackages is set (default true), keeping existing-distro calls cheap.
-func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions) error {
+func provisionDistro(ctx context.Context, opts ProvisionOptions) error {
 	fmt.Printf("  • Checking WSL distro %q...\n", opts.Name)
 	names, err := ListDistros(ctx)
 	if err != nil {
@@ -778,7 +783,7 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 	// distro. Skipped (not an error) when no public key file exists.
 	user := opts.DefaultUser
 	if user == "" {
-		user = os.Getenv("USER")
+		user = sanitizeDefaultUsername(os.Getenv("USER"))
 	}
 	fmt.Printf("  • Configuring SSH access for %q...\n", user)
 	keyInstalled, err := EnsureSSHAccess(ctx, opts.Name, user, opts.SSHPublicKeyPath)
@@ -786,11 +791,11 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 		return fmt.Errorf("ensuring ssh access: %w", err)
 	}
 	if keyInstalled {
-		// WSL's localhost forwarding takes a few seconds to settle after boot,
-		// so VerifySSH retries for up to 30s before declaring failure.
+		// WSL's localhost forwarding can take time or require passphrase-unlocked
+		// keys; treat verification failure as a warning so styling still applies.
 		fmt.Printf("  • Verifying SSH connectivity for %q...\n", user)
 		if err := VerifySSH(ctx, opts.Name, user, 30*time.Second); err != nil {
-			return err
+			fmt.Printf("  ⚠ SSH verification warning: %v (continuing; sshd is configured)\n", err)
 		}
 	}
 	fmt.Printf("  • Applying shell prompt and Windows Terminal style...\n")
@@ -804,14 +809,10 @@ func provisionDistro(ctx context.Context, b *DistBackend, opts ProvisionOptions)
 }
 
 // missingPackages returns the subset of packages that are not installed in the
-// current distro (queried once via dpkg-query). On query failure it assumes
-// nothing is present so a full install can proceed.
+// current distro (queried once via dpkg-query). The dpkg-query command is piped
+// via stdin so WSL never mangles ${Package} or ${db:Status-Status} in argv.
 func missingPackages(ctx context.Context, dist string, packages []string) ([]string, error) {
-	// ${db:Status-Status} yields the single-word status ("installed", "removed",
-	// ...). The older ${Status} field expands to "install ok installed" and
-	// breaks word-based parsing — that mismatch used to mark every package as
-	// missing on every run.
-	out, err := runWslWith(ctx, []string{"-d", dist, "dpkg-query", "-W", "-f=${Package}\\t${db:Status-Status}\\n"})
+	out, err := runWslWithInput(ctx, []string{"-d", dist, "bash"}, `dpkg-query -W -f='${Package}\t${db:Status-Status}\n'`)
 	if err != nil {
 		return append([]string{}, packages...), fmt.Errorf("dpkg-query failed: %w", err)
 	}
@@ -863,7 +864,7 @@ func DistroStorageDir(distroName string) (string, error) {
 func sanitizeDistroDirName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return Dist
+		return DefaultDist
 	}
 	var b strings.Builder
 	for _, r := range name {
@@ -875,7 +876,7 @@ func sanitizeDistroDirName(name string) string {
 	}
 	out := strings.Trim(b.String(), ".")
 	if out == "" {
-		return Dist
+		return DefaultDist
 	}
 	return out
 }

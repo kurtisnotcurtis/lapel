@@ -30,9 +30,9 @@ func (l *LMStudio) Name() string { return "lm-studio" }
 
 // candidateBaseURLs returns candidate base URLs (127.0.0.1 and resolved WSL host IP)
 // so HTTP probes work whether lapel runs on the Windows host or inside WSL NAT mode.
-func candidateBaseURLs(ctx context.Context, port int) []string {
+func candidateBaseURLs(ctx context.Context, dist string, port int) []string {
 	urls := []string{fmt.Sprintf("http://127.0.0.1:%d", port)}
-	if hostIP, err := HostIP(ctx); err == nil && hostIP != "" && hostIP != "127.0.0.1" {
+	if hostIP, err := HostIP(ctx, dist); err == nil && hostIP != "" && hostIP != "127.0.0.1" {
 		urls = append(urls, fmt.Sprintf("http://%s:%d", hostIP, port))
 	}
 	return urls
@@ -154,7 +154,7 @@ func (l *LMStudio) ListModels(ctx context.Context) ([]string, error) {
 func (l *LMStudio) fetchModelsHTTP(ctx context.Context, port int) ([]string, error) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	var lastErr error
-	for _, base := range candidateBaseURLs(ctx, port) {
+	for _, base := range candidateBaseURLs(ctx, l.dist, port) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v1/models", nil)
 		if err != nil {
 			lastErr = err

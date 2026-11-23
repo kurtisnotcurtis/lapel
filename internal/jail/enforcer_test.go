@@ -2,9 +2,12 @@ package jail
 
 import (
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var validPOSIXEnvKeyRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
 func TestEnforcer_Apply(t *testing.T) {
 	profile := Profile{
@@ -21,7 +24,6 @@ func TestEnforcer_Apply(t *testing.T) {
 
 	env := e.Apply(baseEnv)
 
-	// Check PATH was filtered.
 	path := env["PATH"]
 	if path == "" {
 		t.Fatal("PATH not set")
@@ -29,13 +31,9 @@ func TestEnforcer_Apply(t *testing.T) {
 	if strings.Contains(path, "/mnt/c") || strings.Contains(path, "/mnt/d") {
 		t.Errorf("PATH still contains host mounts: %s", path)
 	}
-
-	// Check timeout was injected.
 	if env["JAIL_TIMEOUT"] != "300" {
 		t.Errorf("timeout not set: got %q", env["JAIL_TIMEOUT"])
 	}
-
-	// Check HOME preserved.
 	if env["HOME"] != "/home/agent" {
 		t.Errorf("HOME changed: got %q", env["HOME"])
 	}
@@ -61,31 +59,54 @@ func TestEnforcer_WrapCommand(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("WrapCommand = %v, want %v", got, want)
 	}
+
+	noTimeout := NewEnforcer(Profile{Name: "developer"})
+	if got := noTimeout.WrapCommand([]string{"bash", "-lc", "pi"}); !reflect.DeepEqual(got, []string{"bash", "-lc", "pi"}) {
+		t.Errorf("WrapCommand(0) should be no-op, got %v", got)
+	}
 }
 
-func TestEnforcer_FilesystemScoping(t *testing.T) {
+func TestEnforcer_FilesystemScopingProducesValidPOSIXEnvNames(t *testing.T) {
 	profile := Profile{
 		Name: "developer",
+		User: "agent",
 		Filesystem: map[string]string{
-			"C:\\Users\\user\\Projects": "read-write",
-			"C:\\Windows\\System32":     "deny",
+			"/mnt/c/Users/user/Projects": "read-write",
+			`C:\Windows\System32`:        "deny",
 		},
 	}
 
 	e := NewEnforcer(profile)
 	env := e.Apply(map[string]string{"PATH": "/usr/bin"})
 
-	// Check filesystem scopes were injected.
-	expectedKey := "JAIL_C:_USERS_USER_PROJECTS"
-	if env[expectedKey] != "C:\\Users\\user\\Projects" {
-		t.Errorf("filesystem scope not set correctly: got %v, want key=%q", env, expectedKey)
+	for k := range env {
+		if !validPOSIXEnvKeyRe.MatchString(k) {
+			t.Errorf("generated invalid POSIX env var name %q", k)
+		}
 	}
 
-	// Verify honest reporting marks filesystem-scope as Requested (not overclaimed as Enforced).
+	if env["JAIL_FS_MNT_C_USERS_USER_PROJECTS"] != "/mnt/c/Users/user/Projects" {
+		t.Errorf("missing sanitized Linux scope key in %v", env)
+	}
+	if env["JAIL_FS_C_WINDOWS_SYSTEM32"] != `C:\Windows\System32` {
+		t.Errorf("missing sanitized Windows scope key in %v", env)
+	}
+
+	// Verify honest reporting marks filesystem-scope as Requested and non-root-user as Enforced.
+	foundUser := false
 	for _, c := range e.Controls() {
 		if c.Name == "filesystem-scope" && c.Level != Requested {
 			t.Errorf("expected filesystem-scope level %q, got %q", Requested, c.Level)
 		}
+		if c.Name == "non-root-user" {
+			foundUser = true
+			if c.Level != Enforced {
+				t.Errorf("expected non-root-user level %q, got %q", Enforced, c.Level)
+			}
+		}
+	}
+	if !foundUser {
+		t.Error("expected non-root-user control")
 	}
 }
 

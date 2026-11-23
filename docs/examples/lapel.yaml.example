@@ -5,37 +5,48 @@ apiVersion: lapel.dev/v1
 name: lapel-project
 
 environment:
-  distribution: Ubuntu-Lean
-  base: ubuntu          # "ubuntu" or "debian"; defaults to "ubuntu"
-  version: "24.04"      # pinned release; auto-selected default when omitted
-  packages:             # extra apt packages beyond the built-in agent toolkit
-    - ripgrep
-    - fd-find
-    - tree
+  # WSL distribution name (defaults to "lapel").
+  distribution: lapel
+  # Base Linux image family and Ubuntu LTS version.
+  base: ubuntu
+  version: "24.04"
+  # Boot WSL with systemd (true) or a lightweight [boot] hook for sshd only (false).
+  systemd: true
+  # Extra apt packages beyond the built-in agent-toolkit baseline.
+  packages: []
+  # Visual prompt, welcome banner, and Windows Terminal profile styling.
+  # Presets: "lapel-dark" (default), "violet", "minimal", "none".
+  style:
+    preset: lapel-dark
+    badge: ""
+    banner: true
+    tabColor: ""
+    background: ""
+    windowsTerminal: true
 
 provider:
   name: local
   type: lm-studio       # "lm-studio" | "ollama" | "openai-compatible"
   baseURL: "http://127.0.0.1:1234"
+  model: ""
+  timeout: 60s
   connectionTimeout: 8s
 
 agent:
-  name: pi
+  name: pi              # "pi" | "claude-code" | "copilot"
   provider: local
 
 workspace:
   name: workspace
   path: "."
-  importMode: bind      # "bind" or "copy"
+  importMode: bind      # "bind" (symlink) | "copy" (rsync snapshot)
 
 jail:
   name: developer
   profile: developer
   user: agent
-  filesystem:
-    "C:\\Users\\user\\Projects": read-write
-    "C:\\Windows\\System32": deny
-  network: unrestricted
+  filesystem: {}
   processes:
     privileged: false
-    timeoutSeconds: 300
+    timeoutSeconds: 0   # 0 = no timeout for interactive sessions
+  network: unrestricted # "unrestricted" | "outbound-only" | "none"

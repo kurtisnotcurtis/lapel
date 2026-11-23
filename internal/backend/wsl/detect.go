@@ -1,6 +1,5 @@
-// Package wsl is the first ExecutionBackend implementation. It owns all
-// wsl.exe mechanics: distro discovery, user provisioning, bootstrap, command
-// execution, process tracking and lifecycle (spec 4.2).
+// Package wsl implements the WSL2 execution backend: distro discovery,
+// user provisioning, bootstrap, command execution, and lifecycle.
 package wsl
 
 import (
@@ -16,25 +15,23 @@ import (
 	"lapel/internal/domain"
 )
 
-// Dist is the WSL distribution name to use. Overridable for testing.
-var Dist = "lapel"
+// DefaultDist is the default WSL distribution name managed by lapel.
+const DefaultDist = "lapel"
 
-func wslArgs(args ...string) []string {
-	out := append([]string{"-d", Dist}, args...)
+func wslArgsFor(dist string, args ...string) []string {
+	if strings.TrimSpace(dist) == "" {
+		dist = DefaultDist
+	}
+	out := make([]string, 0, len(args)+2)
+	out = append(out, "-d", dist)
+	out = append(out, args...)
 	return out
-}
-
-// runWsl executes `wsl.exe -d <dist> <args...>` and returns trimmed stdout.
-func runWsl(ctx context.Context, args ...string) (string, error) {
-	return runWslWith(ctx, wslArgs(args...))
 }
 
 // runWslGlobal executes `wsl.exe <args...>` WITHOUT the `-d <dist>` prefix.
 // Global management flags (--import, --unregister, ...) cannot be combined
 // with -d: WSL rejects them ("Invalid command line argument") or mis-parses
-// the arguments. Verified on WSL 3.0.3.0. Note: --set-default-user is NOT a
-// top-level flag — it is a --manage option (`wsl --manage <name>
-// --set-default-user <user>`).
+// the arguments.
 func runWslGlobal(ctx context.Context, args ...string) (string, error) {
 	return runWslWith(ctx, args)
 }
@@ -48,8 +45,7 @@ func runWslWith(ctx context.Context, cmdArgs []string) (string, error) {
 // runWslWithInput is like runWslWith but pipes stdinText into wsl.exe's stdin.
 // Use it for bash scripts instead of passing them as -c arguments: WSL 3.0.3.0
 // mangles unquoted $(...) in argv — command substitutions arrive empty and
-// silently break scripts (verified 2026-11) — while stdin passes through
-// intact.
+// silently break scripts — while stdin passes through intact.
 func runWslWithInput(ctx context.Context, cmdArgs []string, stdinText string) (string, error) {
 	return runWslWithInputStream(ctx, cmdArgs, stdinText, nil)
 }
@@ -60,10 +56,6 @@ func runWslWithInputStream(ctx context.Context, cmdArgs []string, stdinText stri
 	restoreConsole := preserveConsoleMode()
 	defer restoreConsole()
 
-	// NOTE: go1.27 has a bug where spreading a variadic parameter directly as an
-	// argument inside another multi-argument call (`exec.CommandContext(..., wslArgs(args)...)`)
-	// fails to type-check ("cannot use args as string value"). Assigning the helper
-	// result to a local first avoids the nested-spread expression.
 	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
 	var out, errb bytes.Buffer
 	var pw *linePrefixWriter
@@ -83,9 +75,6 @@ func runWslWithInputStream(ctx context.Context, cmdArgs []string, stdinText stri
 		pw.Flush()
 	}
 	if err != nil {
-		// Include stderr: wsl.exe and in-distro commands report failures there
-		// (e.g. `useradd: Permission denied`), and a stdout-only message can be
-		// empty, leaving no clue what went wrong.
 		detail := strings.TrimSpace(sanitize(out.String() + "\n" + errb.String()))
 		return sanitize(strings.TrimSpace(out.String())), fmt.Errorf("%s: %w", detail, err)
 	}
@@ -154,12 +143,11 @@ func (p *linePrefixWriter) emitLineLocked() {
 
 // sanitize removes NUL bytes that wsl.exe emits with UTF-16LE encoding when its
 // stdout is a pipe rather than a console (e.g. `wsl.exe --list --verbose`).
-// Stripping NULs reconstructs the intended ASCII/UTF-8 text for these commands.
 func sanitize(s string) string {
 	return strings.ReplaceAll(s, "\x00", "")
 }
 
-// ListDistros enumerates installed distributions (name + version).
+// ListDistros enumerates installed distributions.
 func ListDistros(ctx context.Context) ([]string, error) {
 	out, err := runWslGlobal(ctx, "--list", "--verbose")
 	if err != nil {
@@ -171,8 +159,6 @@ func ListDistros(ctx context.Context) ([]string, error) {
 // parseDistroNames extracts distro names from `wsl --list --verbose` output.
 // Columns are NAME STATE VERSION; the name may contain spaces, so it is
 // everything except the last two fields. The active distro is prefixed with '*'.
-// (No dash heuristic: plain names like "Ubuntu" must not be dropped, or import
-// idempotency breaks.)
 func parseDistroNames(out string) []string {
 	var names []string
 	for _, line := range strings.Split(out, "\n") {
@@ -189,9 +175,9 @@ func parseDistroNames(out string) []string {
 	return names
 }
 
-// OSRelease parses /etc/os-release for the current distro.
-func OSRelease(ctx context.Context) (map[string]string, error) {
-	out, err := runWsl(ctx, "cat", "/etc/os-release")
+// OSRelease parses /etc/os-release for the given distro.
+func OSRelease(ctx context.Context, dist string) (map[string]string, error) {
+	out, err := runWslWith(ctx, wslArgsFor(dist, "cat", "/etc/os-release"))
 	if err != nil {
 		return nil, err
 	}
@@ -205,15 +191,15 @@ func OSRelease(ctx context.Context) (map[string]string, error) {
 	return m, nil
 }
 
-// Detect reports whether WSL2 and the target distro are available.
+// Detect reports whether WSL2 and the backend's target distro are available.
 // Available is true whenever wsl.exe is installed and operational on the host;
-// if the target distro (Dist) has not been imported yet, Note explains that
-// provisioning is required so `lapel setup` and `lapel apply` can proceed to
-// create it on first run.
+// if the target distro has not been imported yet, Note explains that
+// provisioning is required so `lapel setup` and `lapel apply` can create it.
 func (d *DistBackend) Detect(ctx context.Context) (domain.BackendStatus, error) {
 	if _, err := exec.LookPath("wsl.exe"); err != nil {
 		return domain.BackendStatus{Available: false}, fmt.Errorf("wsl.exe not found on PATH: %w", err)
 	}
+	target := d.dist()
 	version := detectWSLVersion(ctx)
 	names, err := ListDistros(ctx)
 	if err != nil && version == "" {
@@ -226,56 +212,66 @@ func (d *DistBackend) Detect(ctx context.Context) (domain.BackendStatus, error) 
 	}
 	distroFound := false
 	for _, n := range names {
-		if strings.EqualFold(n, Dist) {
+		if strings.EqualFold(n, target) {
 			distroFound = true
 			break
 		}
 	}
 	if !distroFound {
-		status.Note = fmt.Sprintf("distro %q not yet provisioned (run 'lapel setup' or 'lapel provision')", Dist)
+		status.Note = fmt.Sprintf("distro %q not yet provisioned (run 'lapel setup' or 'lapel provision')", target)
 	}
 	return status, nil
 }
 
 // detectWSLVersion parses `wsl.exe --version` output to extract the WSL version string.
-// Returns empty string if detection fails or output is unexpected.
 func detectWSLVersion(ctx context.Context) string {
 	out, err := runWslWith(ctx, []string{"--version"})
 	if err != nil {
 		return ""
 	}
-	// Parse the first line: "WSL version: 3.0.5.0"
+	return parseWSLVersionField(out, "wsl version:")
+}
+
+// parseWSLVersionField extracts the value after a "<prefix>:" line from
+// `wsl.exe --version` output.
+func parseWSLVersionField(out, prefix string) string {
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(strings.ToLower(line), "wsl version:") {
+		if !strings.HasPrefix(strings.ToLower(line), strings.ToLower(prefix)) {
 			continue
 		}
-		parts := strings.Fields(line)
-		if len(parts) < 3 {
-			return ""
+		idx := strings.IndexByte(line, ':')
+		if idx < 0 {
+			continue
 		}
-		// parts[2] is the WSL version (e.g., "3.0.5.0")
-		return parts[2]
+		fields := strings.Fields(line[idx+1:])
+		if len(fields) > 0 {
+			return fields[0]
+		}
 	}
 	return ""
 }
 
-// Inspect returns the current distro's runtime state.
+// Inspect returns the target distro's runtime state.
 func (d *DistBackend) Inspect(ctx context.Context) (domain.EnvironmentStatus, error) {
+	target := d.dist()
 	names, err := ListDistros(ctx)
 	if err != nil {
 		return domain.EnvironmentStatus{}, err
 	}
-	meta, _ := OSRelease(ctx)
-	st := domain.EnvironmentStatus{Metadata: meta}
+	st := domain.EnvironmentStatus{}
 	for _, n := range names {
-		if strings.EqualFold(n, Dist) {
+		if strings.EqualFold(n, target) {
 			st.Exists = true
 			st.Distribution = n
-			if v, ok := meta["VERSION_ID"]; ok {
-				st.Version = v
-			}
 			break
+		}
+	}
+	if st.Exists {
+		meta, _ := OSRelease(ctx, st.Distribution)
+		st.Metadata = meta
+		if v, ok := meta["VERSION_ID"]; ok {
+			st.Version = v
 		}
 	}
 	return st, nil

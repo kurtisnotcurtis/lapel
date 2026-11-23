@@ -57,3 +57,71 @@ func TestPluginsGenerateAndApply(t *testing.T) {
 		t.Fatalf("ClinePlugin.Apply: %v", err)
 	}
 }
+
+func TestPluginsMergeAndBackupExistingConfigs(t *testing.T) {
+	dir := t.TempDir()
+	providers := []ProviderSpec{
+		{
+			Name:    "lm-studio",
+			Port:    1234,
+			BaseURL: "http://127.0.0.1:1234/v1",
+			Models:  BuildModelSpecs([]string{"qwen-14b"}, 24.0),
+		},
+	}
+
+	// Continue: preserves unrelated top-level keys and existing cloud providers, creates .bak.
+	contPath := filepath.Join(dir, "continue.json")
+	origCont := `{"version":"1.0","customSetting":"keep-me","providers":[{"title":"Claude Cloud","provider":"anthropic","model":"claude-3-7","apiBase":"https://api.anthropic.com"}]}`
+	if err := os.WriteFile(contPath, []byte(origCont), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cont := &ContinuePlugin{CustomPath: contPath}
+	if _, err := cont.Apply(providers); err != nil {
+		t.Fatalf("ContinuePlugin.Apply: %v", err)
+	}
+	if bak, err := os.ReadFile(contPath + ".bak"); err != nil || string(bak) != origCont {
+		t.Fatalf("expected backup file with original contents, err=%v", err)
+	}
+	var mergedCont map[string]any
+	rawCont, _ := os.ReadFile(contPath)
+	if err := json.Unmarshal(rawCont, &mergedCont); err != nil {
+		t.Fatal(err)
+	}
+	if mergedCont["customSetting"] != "keep-me" {
+		t.Errorf("ContinuePlugin wiped customSetting: %+v", mergedCont)
+	}
+	if plist, ok := mergedCont["providers"].([]any); !ok || len(plist) != 2 {
+		t.Errorf("ContinuePlugin expected 2 merged providers (existing + local), got %+v", mergedCont["providers"])
+	}
+
+	// Cline: preserves unrelated keys and creates .bak.
+	clinePath := filepath.Join(dir, "cline.json")
+	origCline := `{"customInstructions":"be concise","autoApprove":true}`
+	if err := os.WriteFile(clinePath, []byte(origCline), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cline := &ClinePlugin{CustomPath: clinePath}
+	if _, err := cline.Apply(providers); err != nil {
+		t.Fatalf("ClinePlugin.Apply: %v", err)
+	}
+	if bak, err := os.ReadFile(clinePath + ".bak"); err != nil || string(bak) != origCline {
+		t.Fatalf("expected Cline backup file, err=%v", err)
+	}
+	var mergedCline map[string]any
+	rawCline, _ := os.ReadFile(clinePath)
+	if err := json.Unmarshal(rawCline, &mergedCline); err != nil {
+		t.Fatal(err)
+	}
+	if mergedCline["customInstructions"] != "be concise" || mergedCline["openAiModelId"] != "qwen-14b" {
+		t.Errorf("unexpected merged Cline config: %+v", mergedCline)
+	}
+
+	// Corrupted JSON file must NOT be silently overwritten.
+	badPath := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(badPath, []byte("{not-json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&ClinePlugin{CustomPath: badPath}).Apply(providers); err == nil {
+		t.Error("expected error when existing config is invalid JSON")
+	}
+}

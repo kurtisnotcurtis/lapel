@@ -1,10 +1,11 @@
-// Package plugins provides zero-touch configuration generation and model
-// syncing for VS Code coding-agent extensions (Kilo Code, Continue, Cline)
-// using live models discovered from LM Studio / Ollama and VRAM-aware context
-// window sizing.
+// Package plugins provides configuration generation and model syncing for VS
+// Code coding-agent extensions (Kilo Code, Continue, Cline) using live models
+// discovered from LM Studio / Ollama and VRAM-aware context window sizing.
 package plugins
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,7 +41,8 @@ type Plugin interface {
 	// GenerateConfig renders the plugin's JSON configuration bytes for the given providers.
 	GenerateConfig(providers []ProviderSpec) ([]byte, error)
 
-	// Apply writes the generated configuration to ConfigPath() and returns the path written.
+	// Apply merges the generated configuration into ConfigPath() (backing up any
+	// existing file first) and returns the path written.
 	Apply(providers []ProviderSpec) (string, error)
 }
 
@@ -135,9 +137,45 @@ func userHomeDir() string {
 	return "."
 }
 
+// readExistingJSONObject loads an existing JSON object file into a map so
+// plugin Apply calls can merge lapel-managed keys without wiping unrelated user
+// settings. Returns an empty map when the file does not exist.
+func readExistingJSONObject(path string) (map[string]any, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string]any), nil
+		}
+		return nil, fmt.Errorf("reading existing config %s: %w", path, err)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return make(map[string]any), nil
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("existing config %s is not a valid JSON object (refusing to overwrite): %w", path, err)
+	}
+	if obj == nil {
+		obj = make(map[string]any)
+	}
+	return obj, nil
+}
+
+// writeConfigFile backs up any existing file at path to path+".bak" (when
+// content changes) before writing data.
 func writeConfigFile(path string, data []byte) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", fmt.Errorf("creating config dir for %s: %w", path, err)
+	}
+	if existing, err := os.ReadFile(path); err == nil {
+		if !bytes.Equal(existing, data) {
+			bakPath := path + ".bak"
+			if err := os.WriteFile(bakPath, existing, 0o600); err != nil {
+				return "", fmt.Errorf("creating backup %s: %w", bakPath, err)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("checking existing config %s: %w", path, err)
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return "", fmt.Errorf("writing config %s: %w", path, err)

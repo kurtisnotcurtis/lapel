@@ -1,18 +1,15 @@
 // Package jail implements execution policy enforcement for lapel sessions.
-// It provides an incremental approach to sandboxing: starting with environment
-// scoping, PATH filtering, process timeouts, and file permissions, while
+// It provides an incremental approach to sandboxing: non-root user execution,
+// PATH filtering, optional process timeouts, and workspace metadata, while
 // reporting enforcement status honestly.
 //
-// Each control distinguishes *requested* vs *enforced* vs *unsupported* vs
-// *needs-config* — never silently ignored or overclaimed. This honest reporting
-// lets operators understand exactly what's actually protecting their sessions.
+// Each control distinguishes *enforced* vs *requested* vs *unsupported* vs
+// *needs-config* — never silently ignored or overclaimed.
 package jail
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -28,7 +25,7 @@ const (
 	Enforced EnforcementLevel = "enforced"
 
 	// Requested means the control was requested and declared in environment/metadata,
-	// but depends on workspace mount configuration for OS-level isolation.
+	// but is not kernel-enforced (WSL automount or OS-level isolation still applies).
 	Requested EnforcementLevel = "requested"
 
 	// Unsupported means the control cannot be enforced in the current environment.
@@ -53,7 +50,6 @@ type Profile struct {
 	Filesystem map[string]string `json:"filesystem"` // scope -> "read-write"|"read-only"|"deny"
 	Processes  ProcessConfig     `json:"processes"`
 	Network    NetworkConfig     `json:"network"`
-	Resources  ResourceConfig    `json:"resources"`
 }
 
 // ProcessConfig controls process behavior.
@@ -71,26 +67,39 @@ const (
 	NetworkNone         NetworkConfig = "none"
 )
 
-// ResourceConfig controls resource limits.
-type ResourceConfig struct {
-	Memory string `json:"memory"` // e.g., "2g"
-	CPU    int    `json:"cpu"`    // 0 = all cores
-}
-
 // Enforcer applies jail rules to a session environment.
 type Enforcer struct {
 	profile    Profile
-	env        map[string]string // environment variables to inject
-	pathFilter *PathFilter       // PATH filtering rules
+	pathFilter *PathFilter // PATH filtering rules
 }
 
 // NewEnforcer creates a new enforcer with the given profile.
 func NewEnforcer(profile Profile) *Enforcer {
 	return &Enforcer{
 		profile:    profile,
-		env:        make(map[string]string),
 		pathFilter: NewPathFilter(),
 	}
+}
+
+// sanitizeEnvKey converts an arbitrary filesystem path into a valid POSIX shell
+// environment variable suffix containing only [A-Z0-9_].
+func sanitizeEnvKey(scope string) string {
+	var b strings.Builder
+	prevUnderscore := true // trim leading underscores
+	for _, r := range strings.ToUpper(scope) {
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevUnderscore = false
+		} else if !prevUnderscore {
+			b.WriteByte('_')
+			prevUnderscore = true
+		}
+	}
+	out := strings.TrimRight(b.String(), "_")
+	if out == "" {
+		return "ROOT"
+	}
+	return out
 }
 
 // Apply injects jail-specific environment variables and enforces a clean PATH.
@@ -100,16 +109,21 @@ func (e *Enforcer) Apply(baseEnv map[string]string) map[string]string {
 		env[k] = v
 	}
 
-	// Inject workspace path metadata for filesystem scoping.
-	if e.profile.Filesystem != nil {
+	// Inject workspace path metadata for filesystem scoping using valid POSIX
+	// environment variable names (JAIL_FS_<SANITIZED_PATH>=<mode>).
+	if len(e.profile.Filesystem) > 0 {
+		scopes := make([]string, 0, len(e.profile.Filesystem))
 		for scope := range e.profile.Filesystem {
-			key := strings.ReplaceAll(scope, `\`, `_`)
-			envKey := fmt.Sprintf("JAIL_%s", strings.ToUpper(key))
+			scopes = append(scopes, scope)
+		}
+		sort.Strings(scopes)
+		for _, scope := range scopes {
+			envKey := "JAIL_FS_" + sanitizeEnvKey(scope)
 			env[envKey] = scope
 		}
 	}
 
-	// Inject process timeout.
+	// Inject process timeout when configured (> 0).
 	if e.profile.Processes.TimeoutSeconds > 0 {
 		env["JAIL_TIMEOUT"] = fmt.Sprintf("%d", e.profile.Processes.TimeoutSeconds)
 	}
@@ -121,7 +135,7 @@ func (e *Enforcer) Apply(baseEnv map[string]string) map[string]string {
 }
 
 // WrapCommand wraps the target command with OS-level enforcement utilities
-// such as `timeout(1)` when configured in the profile.
+// such as `timeout(1)` when a positive timeout is configured in the profile.
 func (e *Enforcer) WrapCommand(cmd []string) []string {
 	if len(cmd) == 0 || e.profile.Processes.TimeoutSeconds <= 0 {
 		return cmd
@@ -136,14 +150,24 @@ func (e *Enforcer) WrapCommand(cmd []string) []string {
 func (e *Enforcer) Controls() []Control {
 	var controls []Control
 
+	// Non-root user execution: actively enforced via `wsl.exe -u <user>`.
+	if u := strings.TrimSpace(e.profile.User); u != "" && u != "root" {
+		controls = append(controls, Control{
+			Name:        "non-root-user",
+			Description: "Session runs as a dedicated non-sudo Linux user",
+			Level:       Enforced,
+			Details:     fmt.Sprintf("wsl.exe -u %s (no sudoers entry)", u),
+		})
+	}
+
 	// Filesystem scoping: honest reporting distinguishes metadata/mount request
-	// from kernel-level enforcement.
+	// from kernel-level enforcement (WSL automount remains accessible unless disabled).
 	if len(e.profile.Filesystem) > 0 {
 		controls = append(controls, Control{
 			Name:        "filesystem-scope",
-			Description: "Filesystem scopes declared via JAIL_* env and workspace mount mode",
+			Description: "Filesystem scopes declared via JAIL_FS_* env (not kernel-enforced while WSL automount is enabled)",
 			Level:       Requested,
-			Details:     fmt.Sprintf("scopes: %d (use workspace bind/copy mode for mount isolation)", len(e.profile.Filesystem)),
+			Details:     fmt.Sprintf("scopes: %d (advisory only; use workspace copy mode + disable automount for stronger isolation)", len(e.profile.Filesystem)),
 		})
 	}
 
@@ -157,7 +181,7 @@ func (e *Enforcer) Controls() []Control {
 		})
 	}
 
-	// Process timeout: enforced via `timeout` command wrapper and JAIL_TIMEOUT.
+	// Process timeout: enforced via `timeout` command wrapper when > 0.
 	if e.profile.Processes.TimeoutSeconds > 0 {
 		controls = append(controls, Control{
 			Name:        "process-timeout",
@@ -245,25 +269,4 @@ func (f *PathFilter) Enabled() bool {
 // RemovedCount returns the number of directory prefixes configured for removal.
 func (f *PathFilter) RemovedCount() int {
 	return len(f.removeDirs)
-}
-
-// SetPermissions applies strict file permissions to a directory tree.
-func SetPermissions(path string, perm os.FileMode) error {
-	return filepath.Walk(path, func(p string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return os.Chmod(p, perm|0o755) // directories get rwxr-xr-x
-		}
-		return os.Chmod(p, perm) // files get exact permission
-	})
-}
-
-// Chown recursively changes ownership of a directory tree without shell interpolation.
-func Chown(path string, uid, gid int) error {
-	execCmd := exec.Command("chown", "-R", fmt.Sprintf("%d:%d", uid, gid), path)
-	execCmd.Stdout = os.Stdout
-	execCmd.Stderr = os.Stderr
-	return execCmd.Run()
 }

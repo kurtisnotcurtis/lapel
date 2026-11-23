@@ -3,25 +3,32 @@ package hardware
 import (
 	"context"
 	"fmt"
+	"runtime"
 )
 
 // Detect detects system hardware information based on the current OS.
 func Detect(ctx context.Context) (*Info, error) {
-	// Always try Linux first (works for native Linux and WSL)
-	linuxDet := NewLinuxDetector()
-	info, err := linuxDet.Detect(ctx)
-	if err == nil && info.OS == "linux" {
+	if runtime.GOOS == "windows" {
+		winDet := NewWindowsDetector()
+		info, err := winDet.Detect(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("detecting Windows hardware: %w", err)
+		}
 		return info, nil
 	}
-	fmt.Printf("  [DEBUG] Linux detection failed: %v\n", err)
 
-	// Fall back to Windows (for native Windows .exe execution)
-	winDet := NewWindowsDetector()
-	info, err = winDet.Detect(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect hardware: linux=%v, windows=%v", err, err)
+	linuxDet := NewLinuxDetector()
+	linuxInfo, linuxErr := linuxDet.Detect(ctx)
+	if linuxErr == nil && linuxInfo.OS == "linux" {
+		return linuxInfo, nil
 	}
-	return info, nil
+
+	winDet := NewWindowsDetector()
+	winInfo, winErr := winDet.Detect(ctx)
+	if winErr != nil {
+		return nil, fmt.Errorf("failed to detect hardware: linux=%v, windows=%v", linuxErr, winErr)
+	}
+	return winInfo, nil
 }
 
 // Recommend returns a model recommendation based on detected hardware.

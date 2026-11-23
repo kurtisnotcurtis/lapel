@@ -70,13 +70,30 @@ func TestBuildShellStyleScript(t *testing.T) {
 	for _, want := range []string{
 		"_LAPEL_BADGE='dev-rig'",
 		"_LAPEL_DISTRO='lapel'",
-		`export PS1=`,
-		`⚡ ${_lapel_label}`,
+		`export PS1='`,
+		`⚡ lapel:dev-rig`,
 		`LAPEL_BANNER_SHOWN`,
 		`Linux-only PATH`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("script missing %q:\n%s", want, script)
+		}
+	}
+
+	// Untrusted badge values containing shell substitutions must be neutralized.
+	malicious := ResolveStyle("lapel", domain.EnvironmentStyle{
+		Preset: PresetLapelDark,
+		Badge:  `$(touch /tmp/pwn) ` + "`id`" + ` "evil" 'quote'`,
+	})
+	malScript := BuildShellStyleScript(malicious)
+	for _, forbidden := range []string{"$(touch", "`", `export PS1="`} {
+		if strings.Contains(malScript, forbidden) {
+			t.Errorf("malicious badge left %q in script:\n%s", forbidden, malScript)
+		}
+	}
+	for _, line := range strings.Split(malScript, "\n") {
+		if strings.HasPrefix(line, "export PS1=") && (strings.Contains(line, "$(") || strings.Contains(line, "`")) {
+			t.Errorf("malicious badge left shell expansion in PS1 line:\n%s", line)
 		}
 	}
 
@@ -86,7 +103,7 @@ func TestBuildShellStyleScript(t *testing.T) {
 	if strings.Contains(minScript, "LAPEL_BANNER_SHOWN") {
 		t.Errorf("minimal script should not include login banner:\n%s", minScript)
 	}
-	if !strings.Contains(minScript, `[${_lapel_label}]`) {
+	if !strings.Contains(minScript, `[lapel]`) {
 		t.Errorf("minimal script missing compact prompt badge:\n%s", minScript)
 	}
 

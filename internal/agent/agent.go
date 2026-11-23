@@ -26,27 +26,28 @@ type Agent interface {
 // detectBinaryInWSL checks whether any of the candidate binary names exist in
 // the target WSL distro's login PATH (including ~/.local/bin, /usr/local/fnm,
 // /usr/local/uv/bin), falling back to host exec.LookPath on native Linux.
-func detectBinaryInWSL(ctx context.Context, dist string, candidates ...string) (bool, error) {
+// It returns the matched binary name and true when found.
+func detectBinaryInWSL(ctx context.Context, dist string, candidates ...string) (string, bool, error) {
 	if dist == "" {
 		dist = "lapel"
 	}
 	if _, err := exec.LookPath("wsl.exe"); err == nil {
 		for _, bin := range candidates {
-			script := "export PATH=\"$HOME/.local/bin:/usr/local/fnm:/usr/local/uv/bin:/usr/local/bin:/usr/bin:/bin:$PATH\"; command -v " + bin
+			script := "export PATH=\"$HOME/.local/bin:/usr/local/fnm:/usr/local/uv/bin:/usr/local/bin:/usr/bin:/bin:$PATH\"; command -v -- " + "'" + strings.ReplaceAll(bin, "'", `'\''`) + "'"
 			cmd := exec.CommandContext(ctx, "wsl.exe", "-d", dist, "bash", "-lc", script)
 			out, err := cmd.Output()
 			if err == nil && len(strings.TrimSpace(string(out))) > 0 {
-				return true, nil
+				return bin, true, nil
 			}
 		}
-		return false, nil
+		return "", false, nil
 	}
 
 	// Native Linux fallback when wsl.exe is not present.
 	for _, bin := range candidates {
 		if _, err := exec.LookPath(bin); err == nil {
-			return true, nil
+			return bin, true, nil
 		}
 	}
-	return false, nil
+	return "", false, nil
 }

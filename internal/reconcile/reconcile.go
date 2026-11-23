@@ -1,14 +1,10 @@
 // Package reconcile implements the "plan" side of the desired-state model:
 // given an effective manifest and current system state, compute whether each
-// managed resource matches what the manifest declares. It is decoupled from WSL
-// specifics behind injectable probe functions so it can be unit tested without a
-// live host (spec 3.x).
+// managed resource matches what the manifest declares.
 package reconcile
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,33 +13,6 @@ import (
 	"lapel/internal/config"
 	"lapel/internal/domain"
 )
-
-// CanonicalSpec renders v as compact, stable JSON (keys sorted by encoding/json).
-func CanonicalSpec(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
-// HashSpec returns the content hash of v's canonical spec.
-func HashSpec(v any) string {
-	return HashSpecFromJSON(CanonicalSpec(v))
-}
-
-// HashSpecFromJSON returns the content hash of an already-canonical spec string,
-// or "" for empty input so absent specs round-trip as no-op hashes.
-func HashSpecFromJSON(spec string) string {
-	if strings.TrimSpace(spec) == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(spec))
-	return fmt.Sprintf("%x", sum)
-}
-
-// Probe functions return current state; the reconciler compares them against the
-// manifest to decide whether a resource is "as desired".
 
 // EnvProber reports the runtime status of an environment.
 type EnvProber func(ctx context.Context, env config.Environment) (domain.EnvironmentStatus, error)
@@ -99,12 +68,15 @@ func (d *DiffResult) NonDesired() []Entry {
 	return out
 }
 
-// NewOptions returns probes backed by the real system: WSL distro discovery,
-// HTTP reachability checks and on-disk path checks.
-func NewOptions(ctx context.Context) Options {
+// NewOptions returns probes backed by the real system for the given target distro.
+func NewOptions(ctx context.Context, distro ...string) Options {
+	dist := config.DefaultDistribution
+	if len(distro) > 0 && strings.TrimSpace(distro[0]) != "" {
+		dist = strings.TrimSpace(distro[0])
+	}
 	return Options{
 		EnvProber:       DefaultEnvProber(ctx),
-		ProviderProbe:   DefaultProviderProbe(),
+		ProviderProbe:   DefaultProviderProbe(dist),
 		WorkspaceExists: DefaultWorkspaceExists,
 	}
 }
@@ -112,20 +84,21 @@ func NewOptions(ctx context.Context) Options {
 // Diff computes the desired-state diff for an effective manifest. It is
 // read-only with respect to system state and does not modify anything.
 func Diff(ctx context.Context, m *config.Manifest, opts Options) (*DiffResult, error) {
+	targetDist := envName(m)
 	if opts.EnvProber == nil || opts.ProviderProbe == nil || opts.WorkspaceExists == nil {
-		opts = NewOptions(ctx)
+		opts = NewOptions(ctx, targetDist)
 	}
 
 	res := &DiffResult{Manifest: *m}
 
 	status, err := opts.EnvProber(ctx, m.Environment)
 	if err != nil {
-		return nil, fmt.Errorf("probing environment %q: %w", envName(m), err)
+		return nil, fmt.Errorf("probing environment %q: %w", targetDist, err)
 	}
-	desiredEnv := status.Exists && strings.EqualFold(status.Distribution, m.Environment.Distribution)
+	desiredEnv := status.Exists && strings.EqualFold(status.Distribution, targetDist)
 	res.Entries = append(res.Entries, Entry{
 		Kind:    "environment",
-		Name:    envName(m),
+		Name:    targetDist,
 		Desired: desiredEnv,
 		Actual:  describeEnv(status),
 	})
@@ -152,31 +125,30 @@ func Diff(ctx context.Context, m *config.Manifest, opts Options) (*DiffResult, e
 	return res, nil
 }
 
-// EnvName returns a stable identifier for the manifest's environment.
+// EnvName returns the resolved WSL distribution name for the manifest.
 func EnvName(m *config.Manifest) string { return envName(m) }
 
 func envName(m *config.Manifest) string {
-	if m.Environment.Distribution != "" {
-		return m.Environment.Distribution
+	if m != nil && strings.TrimSpace(m.Environment.Distribution) != "" {
+		return strings.TrimSpace(m.Environment.Distribution)
 	}
-	return "default"
+	return config.DefaultDistribution
 }
 
-// DesiredResources returns the reconciled entries keyed by kind+name for easy
-// lookup by callers that persist a baseline.
-
 // DefaultEnvProber probes WSL distro discovery for the declared distribution.
-// It lists all installed distros (not just the package default) so it can
-// reconcile regardless of the shared DistBackend constant.
 func DefaultEnvProber(ctx context.Context) EnvProber {
 	return func(_ context.Context, env config.Environment) (domain.EnvironmentStatus, error) {
+		target := strings.TrimSpace(env.Distribution)
+		if target == "" {
+			target = config.DefaultDistribution
+		}
 		names, err := listDistros(ctx)
 		if err != nil {
 			return domain.EnvironmentStatus{}, err
 		}
 		st := domain.EnvironmentStatus{}
 		for _, n := range names {
-			if strings.EqualFold(n, env.Distribution) {
+			if strings.EqualFold(n, target) {
 				st.Exists = true
 				st.Distribution = n
 				break
@@ -188,35 +160,37 @@ func DefaultEnvProber(ctx context.Context) EnvProber {
 
 // DefaultProviderProbe checks HTTP(S) reachability of the provider endpoint,
 // with type-specific logic for lm-studio and ollama.
-func DefaultProviderProbe() ProviderProbe {
+func DefaultProviderProbe(distro string) ProviderProbe {
 	return func(cfg config.Provider) (bool, string) {
 		switch strings.ToLower(cfg.Type) {
 		case "lm-studio":
-			return probeLMStudio(cfg)
+			return probeLMStudio(distro, cfg)
 		case "ollama":
-			return probeOllama(cfg)
+			return probeOllama(distro, cfg)
 		default:
-			// Generic OpenAI-compatible endpoint
-			reachable, note, err := checkReachable(cfg.BaseURL)
+			reachable, note, err := checkReachable(distro, cfg.BaseURL)
 			if err != nil {
 				return false, "unreachable: " + note
 			}
-			if reachable {
-				return true, note
-			}
-			return false, note
+			return reachable, note
 		}
 	}
 }
 
-// probeLMStudio checks LM Studio's /v1/models endpoint.
-func probeLMStudio(cfg config.Provider) (bool, string) {
-	baseURL := cfg.BaseURL
+func probeLMStudio(distro string, cfg config.Provider) (bool, string) {
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	if baseURL == "" {
 		baseURL = "http://127.0.0.1:1234"
 	}
-	modelsURL := baseURL + "/v1/models"
-	reachable, note, err := checkReachable(modelsURL)
+	modelsURL := baseURL
+	if !strings.HasSuffix(modelsURL, "/v1/models") {
+		if strings.HasSuffix(modelsURL, "/v1") {
+			modelsURL += "/models"
+		} else {
+			modelsURL += "/v1/models"
+		}
+	}
+	reachable, note, err := checkReachable(distro, modelsURL)
 	if err != nil {
 		return false, "lm-studio unreachable: " + note
 	}
@@ -226,14 +200,13 @@ func probeLMStudio(cfg config.Provider) (bool, string) {
 	return false, "lm-studio not reachable at " + modelsURL
 }
 
-// probeOllama checks Ollama's /api/tags endpoint.
-func probeOllama(cfg config.Provider) (bool, string) {
-	baseURL := cfg.BaseURL
+func probeOllama(distro string, cfg config.Provider) (bool, string) {
+	baseURL := strings.TrimRight(cfg.BaseURL, "/")
 	if baseURL == "" {
 		baseURL = "http://127.0.0.1:11434"
 	}
 	tagsURL := baseURL + "/api/tags"
-	reachable, note, err := checkReachable(tagsURL)
+	reachable, note, err := checkReachable(distro, tagsURL)
 	if err != nil {
 		return false, "ollama unreachable: " + note
 	}
@@ -274,7 +247,9 @@ func describeEnv(st domain.EnvironmentStatus) string {
 }
 
 // DescribeWorkspace renders a human-readable workspace status string.
-func DescribeWorkspace(cfg config.Workspace, exists bool) string { return describeWorkspace(cfg, exists) }
+func DescribeWorkspace(cfg config.Workspace, exists bool) string {
+	return describeWorkspace(cfg, exists)
+}
 
 func describeWorkspace(cfg config.Workspace, exists bool) string {
 	if !exists {
@@ -282,9 +257,11 @@ func describeWorkspace(cfg config.Workspace, exists bool) string {
 	}
 	switch cfg.ImportMode {
 	case "copy":
-		src := filepath.Join(cfg.Source, cfg.Name)
-		if _, err := os.Stat(src); err != nil {
-			return fmt.Sprintf("present (%s), source %q not found", cfg.Path, src)
+		if cfg.Source != "" {
+			src := filepath.Join(cfg.Source, cfg.Name)
+			if _, err := os.Stat(src); err != nil {
+				return fmt.Sprintf("present (%s), source %q not found", cfg.Path, src)
+			}
 		}
 	}
 	return "present: " + cfg.Path

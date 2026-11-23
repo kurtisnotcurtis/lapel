@@ -2,10 +2,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
-	"strconv"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -25,8 +28,44 @@ var (
 	date    = "unknown"
 )
 
+// ExitCodeError signals that a child command exited with a specific non-zero
+// status code and lapel should propagate that code without printing an extra
+// Cobra error banner.
+type ExitCodeError struct {
+	Code int
+}
+
+func (e *ExitCodeError) Error() string {
+	return fmt.Sprintf("exit status %d", e.Code)
+}
+
+// resolveDistro is the single distro resolver used across all CLI commands.
+// Precedence: explicit CLI --distro flag > manifest environment.distribution > "lapel".
+func resolveDistro(flagVal string, m *config.Manifest) string {
+	if d := strings.TrimSpace(flagVal); d != "" {
+		return d
+	}
+	if m != nil {
+		if d := strings.TrimSpace(m.Environment.Distribution); d != "" {
+			return d
+		}
+	}
+	return wsl.DefaultDist
+}
+
 func main() {
-	if err := root().Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	cmd := root()
+	cmd.SilenceErrors = true
+	cmd.SilenceUsage = true
+
+	if err := cmd.ExecuteContext(ctx); err != nil {
+		var exitErr *ExitCodeError
+		if errors.As(err, &exitErr) {
+			os.Exit(exitErr.Code)
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -43,7 +82,6 @@ func root() *cobra.Command {
 		doctorCmd(),
 		envCmd(),
 		providerCmd(),
-		sessionCmd(),
 		wslConfigCmd(),
 		provisionCmd(),
 		initCmd(),
@@ -51,7 +89,6 @@ func root() *cobra.Command {
 		jailControlsCmd(),
 		statusCmd(),
 		planCmd(),
-		checkLocalhostCmd(),
 		runCmd(),
 		shellCmd(),
 		pluginCmd(),
@@ -62,17 +99,24 @@ func root() *cobra.Command {
 }
 
 func doctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var distro string
+	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check WSL environment availability and report diagnostics",
+		Short: "Check WSL environment availability and report diagnostics (read-only)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			b := &wsl.DistBackend{}
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			targetDist := resolveDistro(distro, m)
+			b := wsl.NewBackend(targetDist)
+
 			status, err := b.Detect(ctx)
 			if err != nil {
 				return fmt.Errorf("detection failed: %w", err)
 			}
-			fmt.Printf("backend: %s\n", status.Name)
+			fmt.Printf("backend: %s (distro: %s)\n", status.Name, targetDist)
 			fmt.Printf("  available: %v\n", status.Available)
 			if status.Version != "" {
 				fmt.Printf("  wsl version: %s\n", status.Version)
@@ -81,28 +125,17 @@ func doctorCmd() *cobra.Command {
 				fmt.Printf("  note: %s\n", status.Note)
 			}
 
-			// Check kernel updates if WSL is available.
+			// Read-only WSL kernel inspection (never runs `wsl --update`).
 			if status.Available {
-				kStatus, err := wsl.CheckKernelUpdates(ctx)
-				if err != nil {
-					fmt.Printf("  kernel update check: error (%s)\n", err)
-				} else {
-					updateInfo := "up to date"
-					if kStatus.Available {
-						updateInfo = "UPDATE AVAILABLE"
-					}
-					fmt.Printf("  kernel: %s\n", updateInfo)
-					if kStatus.CurrentVersion != "" {
-						fmt.Printf("    current version: %s\n", kStatus.CurrentVersion)
-					}
-					if kStatus.Message != "" && kStatus.Available {
-						fmt.Printf("    message: %s\n", kStatus.Message)
+				if kInfo, err := wsl.InspectKernelInfo(ctx); err == nil {
+					if kInfo.KernelVersion != "" {
+						fmt.Printf("  kernel version: %s\n", kInfo.KernelVersion)
 					}
 				}
 
 				// Check GPU/CUDA status inside WSL when the distro is provisioned.
 				if status.Note == "" {
-					gStatus, err := wsl.CheckGPUStatus(ctx)
+					gStatus, err := wsl.CheckGPUStatus(ctx, targetDist)
 					if err != nil {
 						fmt.Printf("  gpu: error (%s)\n", err)
 					} else {
@@ -128,22 +161,18 @@ func doctorCmd() *cobra.Command {
 			if err != nil {
 				fmt.Printf("  ⚠ Could not detect hardware: %s\n", err)
 			} else {
-				// GPU info
 				if hwInfo.GPU.Available && hwInfo.GPU.VRAMGB > 0 {
 					fmt.Printf("  ✓ GPU: %s (%.1f GB VRAM)\n", hwInfo.GPU.Name, hwInfo.GPU.VRAMGB)
 				} else {
 					fmt.Println("  ℹ No dedicated GPU detected")
 				}
 
-				// RAM info
 				fmt.Printf("  ✓ RAM: %.1f GB total, %.1f GB available (%.0f%% used)\n",
 					hwInfo.RAM.TotalGB, hwInfo.RAM.AvailableGB, hwInfo.RAM.UsedPercent)
 
-				// CPU info
 				fmt.Printf("  ✓ CPU: %s (%d cores, %d threads)\n",
 					hwInfo.CPU.Name, hwInfo.CPU.Cores, hwInfo.CPU.Threads)
 
-				// Model recommendation
 				rec := hardware.NewDefaultRecommender().Recommend(hwInfo)
 				fmt.Printf("\n  Recommended model tier: %s (%.1f GB VRAM)\n", rec.Tier.Name, rec.Tier.MinVRAMGB)
 				fmt.Printf("  Suggested model: %s\n", rec.ModelName)
@@ -154,18 +183,26 @@ func doctorCmd() *cobra.Command {
 			}
 
 			if !status.Available {
-				fmt.Println("hint: run `lapel setup` or `lapel provision` to create the `lapel` WSL distribution.")
+				fmt.Printf("hint: run `lapel setup` or `lapel provision` to create the %q WSL distribution.\n", targetDist)
 			} else {
 				fmt.Println("WSL environment is available. Proceed to `lapel env status` for runtime details.")
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
+	return cmd
 }
 
 func envCmd() *cobra.Command {
+	var distro string
 	inspectRun := func(cmd *cobra.Command, _ []string) error {
-		b := &wsl.DistBackend{}
+		m, err := config.LoadOptional("")
+		if err != nil {
+			return err
+		}
+		targetDist := resolveDistro(distro, m)
+		b := wsl.NewBackend(targetDist)
 		st, err := b.Inspect(cmd.Context())
 		if err != nil {
 			return err
@@ -181,6 +218,7 @@ func envCmd() *cobra.Command {
 		Short: "Inspect and customize the managed WSL distribution",
 		RunE:  inspectRun,
 	}
+	cmd.PersistentFlags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "status",
@@ -209,15 +247,17 @@ via WSL's lightweight [boot] command hook, or "on" to re-enable systemd.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			target := wsl.Dist
-			if m, err := config.LoadEffective(""); err == nil && m != nil {
-				if envSpec := m.EnvSpec(); envSpec.Distribution != "" {
-					target = envSpec.Distribution
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			flagDist := distro
+			if flagDist == "" {
+				if f := cmd.Flags().Lookup("distro"); f != nil {
+					flagDist = f.Value.String()
 				}
 			}
-			if cmd.Flags().Changed("distro") && strings.TrimSpace(distro) != "" {
-				target = strings.TrimSpace(distro)
-			}
+			target := resolveDistro(flagDist, m)
 
 			action := "status"
 			if len(args) == 1 {
@@ -280,13 +320,14 @@ via WSL's lightweight [boot] command hook, or "on" to re-enable systemd.`,
 			}
 		},
 	}
-	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: lapel or manifest distribution)")
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.Flags().BoolVar(&restart, "restart", false, "terminate the WSL distro immediately so the change takes effect on next launch")
 	return cmd
 }
 
 func envStyleCmd() *cobra.Command {
 	var (
+		distro     string
 		preset     string
 		badge      string
 		tabColor   string
@@ -300,19 +341,26 @@ func envStyleCmd() *cobra.Command {
 		Short: "Apply shell prompt, welcome banner, and Windows Terminal styling to the WSL distro",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			distro := wsl.Dist
-			spec := domain.EnvironmentStyle{Preset: wsl.PresetLapelDark}
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
 
-			if m, err := config.LoadEffective(""); err == nil && m != nil {
-				envSpec := m.EnvSpec()
-				if envSpec.Distribution != "" {
-					distro = envSpec.Distribution
-				}
-				spec = envSpec.Style
+			spec := domain.EnvironmentStyle{Preset: wsl.PresetLapelDark}
+			if m != nil {
+				spec = m.EnvSpec().Style
 				if !cmd.Flags().Changed("user") && m.Jail.User != "" {
 					user = m.Jail.User
 				}
 			}
+
+			flagDist := distro
+			if flagDist == "" {
+				if f := cmd.Flags().Lookup("distro"); f != nil {
+					flagDist = f.Value.String()
+				}
+			}
+			targetDist := resolveDistro(flagDist, m)
 
 			if cmd.Flags().Changed("preset") {
 				spec.Preset = preset
@@ -335,27 +383,28 @@ func envStyleCmd() *cobra.Command {
 				spec.WindowsTerminal = &wt
 			}
 
-			resolved := wsl.ResolveStyle(distro, spec)
-			if err := wsl.ApplyDistroStyle(ctx, distro, user, spec); err != nil {
+			resolved := wsl.ResolveStyle(targetDist, spec)
+			if err := wsl.ApplyDistroStyle(ctx, targetDist, user, spec); err != nil {
 				return err
 			}
-			fragPath, err := wsl.ApplyWindowsTerminalFragment(distro, spec)
+			fragPath, err := wsl.ApplyWindowsTerminalFragment(targetDist, spec)
 			if err != nil {
 				return err
 			}
 
 			if !resolved.Enabled {
-				fmt.Printf("✓ Removed lapel shell styling and Windows Terminal fragment for %s\n", distro)
+				fmt.Printf("✓ Removed lapel shell styling and Windows Terminal fragment for %s\n", targetDist)
 				return nil
 			}
-			fmt.Printf("✓ Applied %q style to %s (badge: %q, banner: %v)\n", resolved.Preset, distro, resolved.Badge, resolved.Banner)
+			fmt.Printf("✓ Applied %q style to %s (badge: %q, banner: %v)\n", resolved.Preset, targetDist, resolved.Badge, resolved.Banner)
 			if fragPath != "" {
 				fmt.Printf("✓ Updated Windows Terminal fragment: %s (scheme: %q, tabColor: %s)\n", fragPath, resolved.SchemeName, resolved.TabColor)
-				fmt.Printf("  ℹ Restart Windows Terminal (close all windows) if the %q profile does not appear in the dropdown yet.\n", distro)
+				fmt.Printf("  ℹ Restart Windows Terminal (close all windows) if the %q profile does not appear in the dropdown yet.\n", targetDist)
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.Flags().StringVar(&preset, "preset", "", "style preset (lapel-dark, violet, minimal, none)")
 	cmd.Flags().StringVar(&badge, "badge", "", "custom prompt badge text (defaults to distro name)")
 	cmd.Flags().StringVar(&tabColor, "tab-color", "", "Windows Terminal tab hex color (#RRGGBB)")
@@ -368,27 +417,33 @@ func envStyleCmd() *cobra.Command {
 
 // providerCmd is the parent command for inference provider management.
 func providerCmd() *cobra.Command {
+	var distro string
 	cmd := &cobra.Command{
 		Use:   "provider",
 		Short: "Manage local inference providers (LM Studio, Ollama)",
 	}
+	cmd.PersistentFlags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.AddCommand(
-		providerDetectCmd(),
-		providerStatusCmd(),
-		providerModelListCmd(),
-		providerReachabilityCmd(),
+		providerDetectCmd(&distro),
+		providerStatusCmd(&distro),
+		providerModelListCmd(&distro),
+		providerReachabilityCmd(&distro),
 	)
 	return cmd
 }
 
 // providerDetectCmd checks which inference providers are installed.
-func providerDetectCmd() *cobra.Command {
+func providerDetectCmd(distroFlag *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "detect",
 		Short: "Check which inference providers are installed on the Windows host",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			reg := provider.NewRegistry(wsl.Dist)
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			reg := provider.NewRegistry(resolveDistro(*distroFlag, m))
 			statuses, err := reg.DetectAll(ctx)
 			if err != nil {
 				return fmt.Errorf("detect failed: %w", err)
@@ -410,13 +465,17 @@ func providerDetectCmd() *cobra.Command {
 }
 
 // providerStatusCmd shows runtime status for all providers.
-func providerStatusCmd() *cobra.Command {
+func providerStatusCmd(distroFlag *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show runtime status for all inference providers",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			reg := provider.NewRegistry(wsl.Dist)
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			reg := provider.NewRegistry(resolveDistro(*distroFlag, m))
 			statuses, err := reg.StatusAll(ctx)
 			if err != nil {
 				return fmt.Errorf("status failed: %w", err)
@@ -445,14 +504,18 @@ func providerStatusCmd() *cobra.Command {
 }
 
 // providerModelListCmd lists available models for a specific provider.
-func providerModelListCmd() *cobra.Command {
+func providerModelListCmd(distroFlag *string) *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
 		Use:   "model-list",
 		Short: "List available models for an inference provider",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			reg := provider.NewRegistry(wsl.Dist)
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			reg := provider.NewRegistry(resolveDistro(*distroFlag, m))
 			p := reg.FindByName(name)
 			if p == nil {
 				return fmt.Errorf("provider %q not found (available: lm-studio, ollama)", name)
@@ -465,8 +528,8 @@ func providerModelListCmd() *cobra.Command {
 				fmt.Printf("%s: no models loaded\n", name)
 				return nil
 			}
-			for _, m := range models {
-				fmt.Println(m)
+			for _, model := range models {
+				fmt.Println(model)
 			}
 			return nil
 		},
@@ -476,7 +539,7 @@ func providerModelListCmd() *cobra.Command {
 }
 
 // providerReachabilityCmd probes the inference endpoint from inside WSL.
-func providerReachabilityCmd() *cobra.Command {
+func providerReachabilityCmd(distroFlag *string) *cobra.Command {
 	var host string
 	var port int
 	cmd := &cobra.Command{
@@ -484,16 +547,21 @@ func providerReachabilityCmd() *cobra.Command {
 		Short: "Probe the inference endpoint from inside WSL and classify errors",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			targetDist := resolveDistro(*distroFlag, m)
 			if host == "" {
-				resolved, err := provider.HostIP(ctx)
+				resolved, err := provider.HostIP(ctx, targetDist)
 				if err != nil {
 					return fmt.Errorf("resolving host IP: %w", err)
 				}
 				host = resolved
 			}
 			addr := fmt.Sprintf("%s:%d", host, port)
-			fmt.Printf("host=%q port=%d\n", host, port)
-			res := provider.CheckEndpoint(ctx, "http://"+addr, 8*time.Second)
+			fmt.Printf("distro=%q host=%q port=%d\n", targetDist, host, port)
+			res := provider.CheckEndpoint(ctx, "http://"+addr, 8*time.Second, targetDist)
 			fmt.Printf("status=%s detail=%q\n", res.Status, res.Detail)
 			if res.Error != nil {
 				return fmt.Errorf("%s: %w", res.Status, res.Error)
@@ -506,53 +574,11 @@ func providerReachabilityCmd() *cobra.Command {
 	return cmd
 }
 
-func sessionCmd() *cobra.Command {
-	var idle = 30 * time.Second
-	cmd := &cobra.Command{
-		Use:    "session smoke",
-		Short:  "Launch a session, then stop it and confirm no orphaned processes remain",
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			ctx := cmd.Context()
-			b := &wsl.DistBackend{}
-			tag := fmt.Sprintf("lapel-smoke-%d", os.Getpid())
-			req := domain.ExecRequest{
-				Dist:       wsl.Dist,
-				WorkingDir: "/tmp",
-				Cmd:        []string{"bash", "-c", fmt.Sprintf("exec -a '%s' sleep %d", tag, int(idle.Seconds()))},
-			}
-			p, err := b.Launch(ctx, req)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("launched session pid=%d\n", p.PID())
-			time.Sleep(500 * time.Millisecond) // let it boot and spawn the child
-			if err := p.Stop(); err != nil {
-				return err
-			}
-			res, _ := p.Wait()
-			fmt.Printf("stopped; exit=%d killed=%v\n", res.ExitCode, res.Killed)
-			// Verify no orphaned sleeps remain in the guest.
-			leftover, err := wsl.CountChildren(ctx, tag)
-			if err != nil {
-				return fmt.Errorf("orphan check: %w", err)
-			}
-			fmt.Printf("remaining session children in guest: %d\n", leftover)
-			if leftover > 0 {
-				return fmt.Errorf("found %d orphaned processes after Stop()", leftover)
-			}
-			return nil
-		},
-	}
-	cmd.Flags().DurationVar(&idle, "idle", 30*time.Second, "how long the session's child sleeps")
-	return cmd
-}
-
 // wslConfigCmd runs a read-only assessment of the host .wslconfig resource caps.
 func wslConfigCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "config",
-		Short:  "Report-only check of host .wslconfig resource caps (WSL2 [wsl2] section)",
+		Use:   "config",
+		Short: "Report-only check of host .wslconfig resource caps (WSL2 [wsl2] section)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			report, err := wsl.InspectConfig(ctx)
@@ -565,31 +591,34 @@ func wslConfigCmd() *cobra.Command {
 	}
 }
 
-// provisionCmd installs the agent-toolkit baseline into the distro. It is
-// idempotent: it imports a minimal Ubuntu/Debian distro if missing, then installs
-// only packages that are not already present.
+// provisionCmd installs the agent-toolkit baseline into the distro.
 func provisionCmd() *cobra.Command {
-	var systemd bool
+	var (
+		distro  string
+		systemd bool
+	)
 	cmd := &cobra.Command{
 		Use:   "provision",
 		Short: "Install the agent-toolkit baseline into the distro (idempotent)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			spec := domain.Environment{Name: wsl.Dist}
-			if m, err := config.LoadEffective(""); err == nil && m != nil {
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			targetDist := resolveDistro(distro, m)
+			spec := domain.Environment{Name: targetDist, Distribution: targetDist}
+			if m != nil {
 				spec = m.EnvSpec()
-				if spec.Distribution != "" {
-					spec.Name = spec.Distribution
-				} else {
-					spec.Name = wsl.Dist
-				}
+				spec.Name = targetDist
+				spec.Distribution = targetDist
 			}
 			if cmd.Flags().Changed("systemd") {
 				s := systemd
 				spec.Systemd = &s
 			}
 			fmt.Printf("=== lapel provision (%s) ===\n", spec.Name)
-			b := &wsl.DistBackend{}
+			b := wsl.NewBackend(spec.Name)
 			if err := b.Provision(ctx, spec); err != nil {
 				return fmt.Errorf("provisioning: %w", err)
 			}
@@ -599,34 +628,9 @@ func provisionCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.Flags().BoolVar(&systemd, "systemd", true, "enable systemd in /etc/wsl.conf (use --systemd=false for lightweight sshd-only boot)")
 	return cmd
-}
-
-// checkLocalhostCmd validates that the distro can reach localhost services on
-// the host (mirrored networking), complementing provider reachability which
-// checks outbound endpoints. It reports one of the same statuses used by the
-// connectivity classifier so results are consistent across commands.
-func checkLocalhostCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:    "check-localhost PORT",
-		Short:  "Probe localhost:<PORT> from inside WSL and classify reachability",
-		Hidden: true,
-		Args:   cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			port, err := strconv.Atoi(args[0])
-			if err != nil {
-				return fmt.Errorf("invalid port %q: %w", args[0], err)
-			}
-			res := provider.CheckLocalhost(ctx, port, 8*time.Second)
-			fmt.Printf("status=%s detail=%q\n", res.Status, res.Detail)
-			if res.Error != nil {
-				return fmt.Errorf("%s: %w", res.Status, res.Error)
-			}
-			return nil
-		},
-	}
 }
 
 // planCmd computes the desired-state diff for the effective manifest and prints
@@ -640,14 +644,11 @@ func planCmd() *cobra.Command {
 		Short: "Show whether the environment matches the desired-state manifest",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			if err := os.MkdirAll(".", 0o755); err != nil { // ensure discovery can search cwd
-				return fmt.Errorf("creating work dir: %w", err)
-			}
 			m, err := config.LoadEffective(manifestPath)
 			if err != nil {
 				return err
 			}
-			res, err := reconcile.Diff(ctx, m, reconcile.NewOptions(ctx))
+			res, err := reconcile.Diff(ctx, m, reconcile.NewOptions(ctx, reconcile.EnvName(m)))
 			if err != nil {
 				return fmt.Errorf("reconciling: %w", err)
 			}

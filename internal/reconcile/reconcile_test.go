@@ -11,7 +11,7 @@ import (
 
 func baseManifest() config.Manifest {
 	return config.Manifest{
-		Name: "demo",
+		Name:        "demo",
 		Environment: config.Environment{Distribution: "Ubuntu-Lean"},
 		Provider:    config.Provider{Name: "local", BaseURL: "http://localhost:1234/v1"},
 		Workspace:   config.Workspace{Name: "work", Path: "/tmp/x", ImportMode: "bind"},
@@ -82,12 +82,32 @@ func TestDiffAllDesired(t *testing.T) {
 func TestEnvNameFallback(t *testing.T) {
 	m := baseManifest()
 	m.Environment.Distribution = ""
-	if got := envName(&m); got != "default" {
-		t.Fatalf("expected default, got %q", got)
+	if got := envName(&m); got != config.DefaultDistribution {
+		t.Fatalf("expected %q, got %q", config.DefaultDistribution, got)
 	}
 	m.Environment.Distribution = "Ubuntu-Lean"
 	if got := envName(&m); got != "Ubuntu-Lean" {
 		t.Fatalf("expected distribution name, got %q", got)
+	}
+}
+
+func TestDiffEmptyDistributionMatchesDefault(t *testing.T) {
+	ctx := context.Background()
+	opts := Options{
+		EnvProber: EnvProber(func(_ context.Context, _ config.Environment) (domain.EnvironmentStatus, error) {
+			return domain.EnvironmentStatus{Exists: true, Distribution: config.DefaultDistribution}, nil
+		}),
+		ProviderProbe:   ProviderProbe(func(config.Provider) (bool, string) { return true, "ok" }),
+		WorkspaceExists: WorkspaceExists(func(config.Workspace) (bool, error) { return true, nil }),
+	}
+	m := baseManifest()
+	m.Environment.Distribution = ""
+	res, err := Diff(ctx, &m, opts)
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if !res.AsDesired() {
+		t.Fatalf("expected empty distribution to match %q, entries=%+v", config.DefaultDistribution, res.Entries)
 	}
 }
 
@@ -114,7 +134,9 @@ func TestEnvProbeMismatch(t *testing.T) {
 func TestProbeErrorPropagates(t *testing.T) {
 	ctx := context.Background()
 	opts := Options{
-		EnvProber:       EnvProber(func(_ context.Context, _ config.Environment) (domain.EnvironmentStatus, error) { return domain.EnvironmentStatus{}, errors.New("boom") }),
+		EnvProber: EnvProber(func(_ context.Context, _ config.Environment) (domain.EnvironmentStatus, error) {
+			return domain.EnvironmentStatus{}, errors.New("boom")
+		}),
 		ProviderProbe:   ProviderProbe(func(config.Provider) (bool, string) { return true, "ok" }),
 		WorkspaceExists: WorkspaceExists(func(config.Workspace) (bool, error) { return true, nil }),
 	}

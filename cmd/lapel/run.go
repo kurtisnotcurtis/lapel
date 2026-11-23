@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 
@@ -16,32 +15,38 @@ import (
 	"lapel/internal/workspace"
 )
 
-// runCmd launches an agent session with jail policies applied. This is the
-// "just works" experience — everything configured, sandboxed, and ready to go.
+// runCmd launches an interactive agent session inside the managed WSL distro
+// with full terminal TTY support, non-root user execution (`-u <jail.user>`),
+// clean Linux PATH, and provider environment variables wired up.
 func runCmd() *cobra.Command {
 	var (
-		user     string
-		timeout  int
+		distro    string
+		user      string
+		timeout   int
 		agentName string
-		wsPath   string
+		wsPath    string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "run",
-		Short: "Launch an agent session with jail policies applied",
-		Long: `Run your coding agent in a sandboxed WSL environment. The session inherits
-jail policies (filesystem scoping, network restrictions, process timeouts) so your
-agent can work without risking your Windows files.
+		Short: "Launch an interactive agent session inside the sandboxed WSL environment",
+		Long: `Run your coding agent in the managed WSL environment with full terminal
+interactivity. The session runs as the configured non-root jail user (-u),
+applies a Linux-only PATH, wires your Windows inference provider, and returns
+the child process's exit code.
 
-If no --agent is specified, lapel will detect which agents are available and use the first one found.`,
+If no --agent is specified, lapel detects which agents are available and launches
+the first one found (or falls back to an interactive login shell).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
 			fmt.Println("=== lapel run ===")
 
-			// Load lapel.yaml if present to apply declarative defaults when CLI flags aren't explicitly set.
-			m, manifestErr := config.LoadEffective("")
-			if manifestErr == nil && m != nil {
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			if m != nil {
 				if !cmd.Flags().Changed("agent") && m.Agent.Name != "" {
 					agentName = m.Agent.Name
 				}
@@ -56,9 +61,10 @@ If no --agent is specified, lapel will detect which agents are available and use
 				}
 			}
 
-			b := &wsl.DistBackend{}
+			targetDist := resolveDistro(distro, m)
+			b := wsl.NewBackend(targetDist)
 
-			// Check WSL availability
+			// Check WSL availability and distro presence.
 			status, err := b.Detect(ctx)
 			if err != nil {
 				return fmt.Errorf("detection failed: %w", err)
@@ -68,13 +74,13 @@ If no --agent is specified, lapel will detect which agents are available and use
 				return fmt.Errorf("WSL not available")
 			}
 			if status.Note != "" {
-				fmt.Printf("✗ WSL distro %q is not provisioned yet. Run `lapel setup` first.\n", wsl.Dist)
-				return fmt.Errorf("distro %q not provisioned", wsl.Dist)
+				fmt.Printf("✗ WSL distro %q is not provisioned yet. Run `lapel setup` first.\n", targetDist)
+				return fmt.Errorf("distro %q not provisioned", targetDist)
 			}
 
-			// Step 1: Detect available agents
+			// Step 1: Detect available agents.
 			fmt.Println("Step 1/4: Checking for available agents...")
-			mgr := agent.NewManager()
+			mgr := agent.NewManager(targetDist)
 			agentStatuses, err := mgr.DetectAll(ctx)
 			if err != nil {
 				return fmt.Errorf("detecting agents: %w", err)
@@ -88,7 +94,6 @@ If no --agent is specified, lapel will detect which agents are available and use
 				fmt.Printf("  %s %s\n", symbol, s.Name)
 			}
 
-			// Determine which agent to use
 			var selectedAgent agent.Agent
 			if cmd.Flags().Changed("agent") && agentName != "" {
 				selectedAgent = mgr.FindByName(agentName)
@@ -96,7 +101,6 @@ If no --agent is specified, lapel will detect which agents are available and use
 					return fmt.Errorf("agent %q not found. Available: %v", agentName, mgr.List())
 				}
 			} else {
-				// Auto-detect first available (prefer manifest agent if installed)
 				if agentName != "" {
 					for _, s := range agentStatuses {
 						if s.Installed && s.Name == agentName {
@@ -115,15 +119,15 @@ If no --agent is specified, lapel will detect which agents are available and use
 				}
 			}
 			if selectedAgent != nil {
-				fmt.Printf("\n  Using agent: %s\n", selectedAgent.Name())
+				fmt.Printf("\n  Using agent: %s (%s)\n", selectedAgent.Name(), selectedAgent.Binary())
 			} else {
 				fmt.Println("\n  ℹ No coding agent CLI installed yet in WSL — launching interactive jailed shell.")
-				fmt.Println("    (Tip: install an agent inside the shell via `npm i -g @anthropic-ai/claude-code` or `npm i -g @githubnext/github-copilot-cli`)")
+				fmt.Println("    (Tip: install an agent inside the shell via `npm i -g @anthropic-ai/claude-code` or `npm i -g @github/copilot`)")
 			}
 
-			// Step 2: Get provider info
+			// Step 2: Check running inference providers.
 			fmt.Println("\nStep 2/4: Checking inference providers...")
-			reg := provider.NewRegistry(wsl.Dist)
+			reg := provider.NewRegistry(targetDist)
 			statuses, err := reg.StatusAll(ctx)
 			if err != nil {
 				return fmt.Errorf("getting provider status: %w", err)
@@ -136,37 +140,18 @@ If no --agent is specified, lapel will detect which agents are available and use
 					break
 				}
 			}
-
 			if runningProvider == nil {
-				fmt.Println("  ℹ No provider running. Starting Ollama...")
-				ollama := reg.FindByName("ollama")
-				if ollama != nil {
-					if err := ollama.Start(ctx); err != nil {
-						return fmt.Errorf("starting ollama: %w", err)
-					}
-					// Re-check status
-					statuses, _ = reg.StatusAll(ctx)
-					for _, s := range statuses {
-						if s.Running {
-							runningProvider = s
-							break
-						}
-					}
-				}
+				return fmt.Errorf("no running inference provider found; start LM Studio (port 1234) or Ollama (port 11434) on Windows first")
 			}
 
-			if runningProvider == nil {
-				return fmt.Errorf("no running provider found. Start LM Studio or Ollama first.")
-			}
-
-			hostIP, err := provider.HostIP(ctx)
+			hostIP, err := provider.HostIP(ctx, targetDist)
 			if err != nil || hostIP == "" {
 				fmt.Printf("  ⚠ Could not resolve WSL host gateway IP (%v); falling back to localhost\n", err)
 				hostIP = "localhost"
 			}
 			providerURL := fmt.Sprintf("http://%s:%d", hostIP, runningProvider.Port)
 			model := ""
-			if manifestErr == nil && m != nil && m.Provider.Model != "" {
+			if m != nil && m.Provider.Model != "" {
 				model = m.Provider.Model
 			} else if len(runningProvider.Models) > 0 {
 				model = runningProvider.Models[0]
@@ -177,13 +162,12 @@ If no --agent is specified, lapel will detect which agents are available and use
 			fmt.Printf("  ✓ Provider: %s at %s\n", runningProvider.Name, providerURL)
 			fmt.Printf("  ✓ Model: %s\n", model)
 
-			// Step 3: Configure agent environment
+			// Step 3: Configure agent and jail environment.
 			fmt.Println("\nStep 3/4: Configuring agent environment...")
 			env := make(map[string]string)
 			if selectedAgent != nil {
 				selectedAgent.Configure(env, providerURL, model)
 			} else {
-				// Populate standard OpenAI/Anthropic/Ollama env vars for the jailed shell
 				mgr.FindByName("pi").Configure(env, providerURL, model)
 				mgr.FindByName("claude-code").Configure(env, providerURL, model)
 			}
@@ -192,13 +176,12 @@ If no --agent is specified, lapel will detect which agents are available and use
 				fmt.Printf("  %s=%s\n", k, v)
 			}
 
-			// Build jail profile and apply it
 			fsPolicy := map[string]string{
 				windowsPathToLinux(wsPath): "read-write",
 			}
 			netPolicy := jail.NetworkUnrestricted
 			profileName := "agent-session"
-			if manifestErr == nil && m != nil {
+			if m != nil {
 				if m.Jail.Profile != "" {
 					profileName = m.Jail.Profile
 				}
@@ -221,29 +204,36 @@ If no --agent is specified, lapel will detect which agents are available and use
 			enforcer := jail.NewEnforcer(profile)
 			jailEnv := enforcer.Apply(env)
 
-			fmt.Printf("\n  Jail profile: %s\n", profile.Name)
-			fmt.Printf("  User: %s\n", user)
-			fmt.Printf("  Timeout: %ds\n", timeout)
+			fmt.Printf("\n  Distro:  %s\n", targetDist)
+			fmt.Printf("  Profile: %s\n", profile.Name)
+			fmt.Printf("  User:    %s\n", user)
+			if timeout > 0 {
+				fmt.Printf("  Timeout: %ds\n", timeout)
+			} else {
+				fmt.Printf("  Timeout: none (interactive)\n")
+			}
 
-			// Step 4: Launch agent
-			fmt.Println("\nStep 4/4: Launching agent...")
+			// Step 4: Launch interactive session attached to the current terminal.
+			fmt.Println("\nStep 4/4: Launching session...")
 
-			cmdStr := "bash -l"
+			launchCmd := []string{"bash", "-l"}
+			launchLabel := "bash -l"
 			if selectedAgent != nil && selectedAgent.Binary() != "" {
-				cmdStr = selectedAgent.Binary()
+				launchLabel = selectedAgent.Binary()
+				launchCmd = []string{"bash", "-lc", "exec " + launchLabel}
 			}
 
 			workDir := windowsPathToLinux(wsPath)
 			wsName := filepath.Base(wsPath)
-			if manifestErr == nil && m != nil && m.Workspace.Name != "" {
+			if m != nil && m.Workspace.Name != "" {
 				wsName = m.Workspace.Name
 			}
 			if wsName == "" || wsName == "." {
 				wsName = "project"
 			}
-			wsMgr := workspace.NewManager(user)
+			wsMgr := workspace.NewManager(targetDist, user)
 			importMode := workspace.ModeBind
-			if manifestErr == nil && m != nil && m.Workspace.ImportMode != "" {
+			if m != nil && m.Workspace.ImportMode != "" {
 				importMode = workspace.ImportMode(m.Workspace.ImportMode)
 			}
 			if wsMgr.Exists(wsName, importMode) {
@@ -251,43 +241,31 @@ If no --agent is specified, lapel will detect which agents are available and use
 			}
 
 			req := domain.ExecRequest{
-				Dist:       wsl.Dist,
+				Dist:       targetDist,
 				User:       user,
 				WorkingDir: workDir,
-				Cmd:        enforcer.WrapCommand([]string{"bash", "-lc", cmdStr}),
+				Cmd:        enforcer.WrapCommand(launchCmd),
 				Env:        jailEnv,
-				Stdin:      true,
 			}
 
-			fmt.Printf("  Launching: %s\n\n", cmdStr)
+			fmt.Printf("  Launching: %s\n\n", launchLabel)
 
-			session, err := b.Launch(ctx, req)
+			exitCode, err := b.RunInteractive(ctx, req)
 			if err != nil {
 				return fmt.Errorf("launch failed: %w", err)
 			}
-
-			fmt.Printf("\nSession started (PID: %d)\n", session.PID())
-			fmt.Println("Press Ctrl+C to stop.")
-
-			result, err := session.Wait()
-			if err != nil {
-				return fmt.Errorf("session wait failed: %w", err)
+			if exitCode != 0 {
+				return &ExitCodeError{Code: exitCode}
 			}
-
-			fmt.Printf("\nSession exited with code %d\n", result.ExitCode)
 			return nil
 		},
 	}
 
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.Flags().StringVar(&user, "user", "agent", "Linux user for jail context")
-	cmd.Flags().IntVar(&timeout, "timeout", 300, "Process timeout in seconds")
+	cmd.Flags().IntVar(&timeout, "timeout", 0, "optional process timeout in seconds (0 = no timeout for interactive sessions)")
 	cmd.Flags().StringVar(&agentName, "agent", "", "agent to launch (pi, claude-code, copilot)")
 	cmd.Flags().StringVar(&wsPath, "workspace", ".", "working directory path")
 
 	return cmd
-}
-
-// keepAlive is a small helper that blocks until context is done or an interrupt.
-func keepAlive(ctx context.Context) {
-	<-ctx.Done()
 }

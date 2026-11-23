@@ -21,20 +21,21 @@ import (
 // (~500 MB), creates a real distro on this machine, and unregisters it again at
 // the end. Run from the Windows host:
 //
-//	TB_E2E=1 go test -run TestE2EFreshImportAndSetup -v -timeout 45m ./internal/backend/wsl/
+//	LAPEL_E2E=1 go test -run TestE2EFreshImportAndSetup -v -timeout 45m ./internal/backend/wsl/
 func TestE2EFreshImportAndSetup(t *testing.T) {
-	if os.Getenv("TB_E2E") != "1" {
-		t.Skip("set TB_E2E=1 to run the live e2e provision (downloads a rootfs and creates a throwaway distro)")
+	if os.Getenv("LAPEL_E2E") != "1" {
+		t.Skip("set LAPEL_E2E=1 to run the live e2e provision (downloads a rootfs and creates a throwaway distro)")
 	}
 
 	user := os.Getenv("USER")
 	if user == "" {
 		user = os.Getenv("USERNAME")
 	}
+	user = sanitizeDefaultUsername(user)
 	if user == "" {
-		user = "tbagent"
+		user = "lapelagent"
 	}
-	name := fmt.Sprintf("tb-e2e-%d", time.Now().Unix())
+	name := fmt.Sprintf("lapel-e2e-%d", time.Now().Unix())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
@@ -42,12 +43,11 @@ func TestE2EFreshImportAndSetup(t *testing.T) {
 	inWSL := os.Getenv("WSL_DISTRO_NAME") != ""
 
 	// Best-effort cleanup: unregister the throwaway distro and remove any
-	// leftover import directories (VHDX containers). TB_E2E_KEEP=1 leaves both
-	// in place for post-mortem inspection (the distro's data lives in the
-	// import directory, so keep skips that removal too).
+	// leftover import directories (VHDX containers). LAPEL_E2E_KEEP=1 leaves
+	// both in place for post-mortem inspection.
 	t.Cleanup(func() {
-		if os.Getenv("TB_E2E_KEEP") == "1" {
-			t.Logf("KEEP: leaving %s and its import directory in place (TB_E2E_KEEP=1)", name)
+		if os.Getenv("LAPEL_E2E_KEEP") == "1" {
+			t.Logf("KEEP: leaving %s and its import directory in place (LAPEL_E2E_KEEP=1)", name)
 			return
 		}
 		cctx, ccancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -77,7 +77,7 @@ func TestE2EFreshImportAndSetup(t *testing.T) {
 	}
 
 	t.Logf("provisioning throwaway distro %s (base ubuntu 24.04, user %s)", name, user)
-	if err := provisionDistro(ctx, &DistBackend{}, opts); err != nil {
+	if err := provisionDistro(ctx, opts); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
 
@@ -142,16 +142,11 @@ func TestE2EFreshImportAndSetup(t *testing.T) {
 		}
 	}
 
-	// 5b. Command substitutions survive the Exec path (regression: WSL 3.0.3.0
-	//     mangles $(...) in argv — even inside quotes — pre-evaluating or
-	//     stripping it before bash sees it, verified 2026-11). Scripts must
-	//     travel via stdin; this proves a user command with $(...) is intact.
-	savedDist := Dist // Exec targets the package-level distro (req.Dist is unused)
-	Dist = name
-	execRes, err := (&DistBackend{}).Exec(ctx, domain.ExecRequest{
-		Cmd: []string{"bash", "-c", "x=$(echo ok); echo sub=$x"},
+	// 5b. Command substitutions survive the Exec path.
+	execRes, err := NewBackend(name).Exec(ctx, domain.ExecRequest{
+		Dist: name,
+		Cmd:  []string{"bash", "-c", "x=$(echo ok); echo sub=$x"},
 	})
-	Dist = savedDist
 	if err != nil {
 		t.Fatalf("exec with command substitution: %v", err)
 	}
@@ -190,7 +185,7 @@ func TestE2EFreshImportAndSetup(t *testing.T) {
 	// 7. Agent detection: verify that agents can be detected inside the distro.
 	// This tests the exec path for agent binaries (pi, copilot, claude).
 	t.Log("\n=== Agent Detection ===")
-	agentMgr := agent.NewManager()
+	agentMgr := agent.NewManager(name)
 	agents, err := agentMgr.DetectAll(ctx)
 	if err != nil {
 		t.Fatalf("agent detection failed: %v", err)

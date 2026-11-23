@@ -11,17 +11,16 @@ import (
 )
 
 // initCmd scaffolds a starter lapel.yaml manifest in the current working
-// directory. It writes a schema-complete, commented template that documents
-// every managed section and its options; it never runs or modifies any real
-// environment. Re-running overwrites only when --force is given.
+// directory. It writes a schema-complete, commented template that passes
+// strict config.Load validation out of the box.
 func initCmd() *cobra.Command {
 	var (
-		path    string
-		force   bool
+		path  string
+		force bool
 	)
 	cmd := &cobra.Command{
-		Use:    "init",
-		Short:  "Scaffold a starter lapel.yaml manifest in this directory",
+		Use:   "init",
+		Short: "Scaffold a starter lapel.yaml manifest in this directory",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if path == "" {
 				path = config.DefaultManifestName
@@ -43,7 +42,8 @@ func initCmd() *cobra.Command {
 			}
 			fmt.Printf("created %s\n", path)
 			fmt.Println("\nNext steps:")
-			fmt.Println("  lapel plan   # reconcile this manifest against live state")
+			fmt.Println("  lapel apply   # provision WSL distro and import workspace")
+			fmt.Println("  lapel plan    # verify live state matches lapel.yaml")
 			return nil
 		},
 	}
@@ -52,41 +52,24 @@ func initCmd() *cobra.Command {
 	return cmd
 }
 
-// starterManifest returns a schema-complete, commented example manifest. It is
-// intentionally valid YAML and applies cleanly through config.Load defaults, so
-// `lapel plan` works against it out of the box after edits.
+// starterManifest returns the canonical starter lapel.yaml manifest. It is
+// strictly valid YAML matching docs/examples/lapel.yaml.example.
 func starterManifest() string {
 	return `# lapel desired-state manifest
-#
-# This is a starter template. Every managed section below is optional; run
-#   lapel init --help
-# and see AGENTS.md for field-by-field guidance. Fields left blank are filled
-# with sensible defaults by the CLI (see config.Load).
+# See internal/config/manifest.go for field documentation.
 
 apiVersion: lapel.dev/v1
 name: lapel-project
 
-# The runtime environment this agent runs inside (WSL2 distro on Windows, or
-# native Linux). Leave distribution blank to import a fresh pinned rootfs.
 environment:
-  # WSL distribution name (defaults to "lapel"). Use "import" + base/version
-  # below to have lapel create a fresh pinned rootfs.
-  distribution: ""
-  # base: ubuntu | debian ; version: e.g. "24.04" / "12"
+  # WSL distribution name (defaults to "lapel").
+  distribution: lapel
+  # Base Linux image family and Ubuntu LTS version.
   base: ubuntu
   version: "24.04"
-  # Pin the distro rootfs image (+checksum) instead of importing from a name.
-  rootfsImage: ""
   # Boot WSL with systemd (true) or a lightweight [boot] hook for sshd only (false).
   systemd: true
-  # Runtimes -> pinned major versions (the agent-toolkit baseline is always
-  # applied; list extras here).
-  runtimes:
-    node: "20"
-    python: "3"
-    go: "1.23"
-    rust: ""
-  # Extra apt packages beyond the agent-toolkit minimum.
+  # Extra apt packages beyond the built-in agent-toolkit baseline.
   packages: []
   # Visual prompt, welcome banner, and Windows Terminal profile styling.
   # Presets: "lapel-dark" (default), "violet", "minimal", "none".
@@ -98,45 +81,31 @@ environment:
     background: ""
     windowsTerminal: true
 
-# The inference provider this agent talks to. A local LM Studio endpoint is
-# shown by default; point baseURL at any OpenAI-compatible server to switch.
 provider:
   name: local
-  type: openai-compatible
-  baseURL: "http://host.docker.internal:1234/v1"
+  type: lm-studio       # "lm-studio" | "ollama" | "openai-compatible"
+  baseURL: "http://127.0.0.1:1234"
   model: ""
-  # Reference a key stored in the local secret store instead of embedding it.
-  apiKeySecret: ""
   timeout: 60s
   connectionTimeout: 8s
 
-# The agent harness configuration. provider is a logical name reference to
-# the provider section above.
 agent:
-  name: pi
-  harness: ""
+  name: pi              # "pi" | "claude-code" | "copilot"
   provider: local
 
-# Where this agent's work happens. importMode "bind" shares the host path;
-# "copy" mirrors it into the distro.
 workspace:
   name: workspace
-  path: "/tmp"
-  source: ""
-  importMode: bind
+  path: "."
+  importMode: bind      # "bind" (symlink) | "copy" (rsync snapshot)
 
-# The execution jail for untrusted code. Kept minimal by default.
 jail:
-  name: jail
+  name: developer
   profile: developer
   user: agent
   filesystem: {}
   processes:
     privileged: false
-    timeoutSeconds: 60
-  resources:
-    memory: ""
-    cpu: 0
-  network: unrestricted
+    timeoutSeconds: 0   # 0 = no timeout for interactive sessions
+  network: unrestricted # "unrestricted" | "outbound-only" | "none"
 `
 }

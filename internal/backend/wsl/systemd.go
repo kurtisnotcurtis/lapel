@@ -150,7 +150,7 @@ type SystemdStatus struct {
 // InspectSystemd queries /etc/wsl.conf and live PID 1 / sshd state in distro.
 func InspectSystemd(ctx context.Context, distro string) (SystemdStatus, error) {
 	if strings.TrimSpace(distro) == "" {
-		distro = Dist
+		distro = DefaultDist
 	}
 	script := `if [ -d /run/systemd/system ]; then echo "LAPEL_ACTIVE=true"; else echo "LAPEL_ACTIVE=false"; fi
 if ([ -f /run/sshd.pid ] && kill -0 "$(cat /run/sshd.pid 2>/dev/null)" 2>/dev/null) || pgrep -x sshd >/dev/null 2>&1; then
@@ -189,7 +189,7 @@ cat /etc/wsl.conf 2>/dev/null || true
 // the distro is restarted (`wsl --terminate <distro>`).
 func ApplySystemdConfig(ctx context.Context, distro string, enabled bool) error {
 	if strings.TrimSpace(distro) == "" {
-		distro = Dist
+		distro = DefaultDist
 	}
 	existing, _ := runWslWith(ctx, []string{"-d", distro, "sh", "-c", "cat /etc/wsl.conf 2>/dev/null || true"})
 	updatedConf := updateWSLConfBoot(existing, enabled)
@@ -213,7 +213,7 @@ func ApplySystemdConfig(ctx context.Context, distro string, enabled bool) error 
 // take effect on next launch.
 func TerminateDistro(ctx context.Context, distro string) error {
 	if strings.TrimSpace(distro) == "" {
-		distro = Dist
+		distro = DefaultDist
 	}
 	if _, err := runWslGlobal(ctx, "--terminate", distro); err != nil {
 		return fmt.Errorf("terminating WSL distro %s: %w", distro, err)

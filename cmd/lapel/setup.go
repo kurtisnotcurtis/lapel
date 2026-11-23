@@ -19,15 +19,14 @@ import (
 	"lapel/internal/workspace"
 )
 
-// setupCmd is the one-command "try something" experience. It chains:
-//  1. Quick doctor check (WSL availability, provider reachability)
-//  2. Provision the distro if needed
-//  3. Import workspace from current directory or prompt for path
-//  4. Apply jail policies
-//
-// This is the hero command for new users — everything they need to get started.
+// setupCmd is the one-command guided setup experience. It chains:
+//  1. Quick doctor check (WSL availability, GPU)
+//  2. Provider reachability check
+//  3. Provision the target WSL distro if needed
+//  4. Import workspace and summarize jail controls applied at `lapel run`
 func setupCmd() *cobra.Command {
 	var (
+		distro        string
 		workspacePath string
 		user          string
 		force         bool
@@ -36,10 +35,10 @@ func setupCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "setup",
-		Short: "One-command guided setup: provision, import workspace, apply jail",
+		Short: "One-command guided setup: provision distro, import workspace, inspect jail controls",
 		Long: `Set up lapel in one command. Checks WSL availability, provisions the
-distro if needed, imports your current project directory (or a path you specify),
-and applies jail policies so your agent can't accidentally eat your Windows files.
+managed distro if needed, imports your current project directory (or a path you
+specify), and summarizes the jail controls enforced during 'lapel run'.
 
 If you're already set up, run setup again to refresh — it's idempotent.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -47,29 +46,34 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 
 			fmt.Println("=== lapel setup ===")
 
-			// Show feature flag status
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
+			targetDist := resolveDistro(distro, m)
+
+			// Show feature flag status.
 			if features.IsEnabled(features.CommunityEnabled) {
 				fmt.Printf("\n🌐 Community features enabled\n")
-				fmt.Printf("   Community endpoint: %s\n", features.GetEndpoint())
-				if !features.IsEnabled(features.UseOfficialBackend) {
-					fmt.Printf("   Using: Self-hosted backend\n")
+				if ep := features.GetEndpoint(); ep != "" {
+					fmt.Printf("   Community endpoint: %s\n", ep)
 				} else {
-					fmt.Printf("   Using: Lapel hosted backend (api.lapel.dev)\n")
+					fmt.Printf("   Community endpoint: unset (set LAPEL_COMMUNITY_ENDPOINT to share/query)\n")
 				}
 			} else {
 				fmt.Println("\n🔒 Community features disabled")
 			}
 
-			// Step 1: Quick doctor check
+			// Step 1: Quick doctor check.
 			fmt.Println("Step 1/4: Checking WSL environment...")
-			b := &wsl.DistBackend{}
+			b := wsl.NewBackend(targetDist)
 			status, err := b.Detect(ctx)
 			if err != nil {
 				return fmt.Errorf("detection failed: %w", err)
 			}
 
 			if !status.Available {
-				fmt.Println("  ✗ WSL not available. Install WSL2 via `wsl.exe --install` or run `lapel provision` to import the `lapel` distro.")
+				fmt.Printf("  ✗ WSL not available. Install WSL2 via `wsl.exe --install` first.\n")
 				return fmt.Errorf("WSL not available")
 			}
 
@@ -77,35 +81,30 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			if status.Note != "" {
 				fmt.Printf("  ℹ %s\n", status.Note)
 			} else {
-				// Check GPU inside WSL if the distro is already present (informational)
-				gStatus, err := wsl.CheckGPUStatus(ctx)
+				gStatus, err := wsl.CheckGPUStatus(ctx, targetDist)
 				if err == nil && len(gStatus.GPUs) > 0 {
 					fmt.Printf("  ✓ GPU detected: %s\n", gStatus.GPUs[0])
 				}
 			}
 
-			// Detect hardware for community profile (if enabled)
+			// Detect hardware for community profile (if enabled).
 			if features.IsEnabled(features.CommunityEnabled) {
 				fmt.Println("\nDetecting hardware profile...")
 				hwInfo, err := hardware.Detect(ctx)
 				if err == nil {
-					// Create a minimal hardware profile for community
 					profile := community.HardwareProfile{
-						OS:       "Windows",
+						OS:       hwInfo.OS,
 						RAM:      int64(hwInfo.RAM.TotalGB),
 						CPUModel: hwInfo.CPU.Name,
 						CPUCores: hwInfo.CPU.Cores,
 					}
-
 					if hwInfo.GPU.Name != "" {
 						profile.GPUs = append(profile.GPUs, community.GPUInfo{
-							Name:   hwInfo.GPU.Name,
-							VRAMGB: int(hwInfo.GPU.VRAMGB),
-
+							Name:        hwInfo.GPU.Name,
+							VRAMGB:      int(hwInfo.GPU.VRAMGB),
 							CUDAVersion: hwInfo.GPU.Compute,
 						})
 					}
-
 					fmt.Printf("  ✓ Hardware profile created (%d GB RAM", profile.RAM)
 					if len(profile.GPUs) > 0 {
 						fmt.Printf(", %s with %d GB VRAM", profile.GPUs[0].Name, profile.GPUs[0].VRAMGB)
@@ -116,9 +115,9 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 				}
 			}
 
-			// Step 2: Provider reachability
+			// Step 2: Provider reachability.
 			fmt.Println("\nStep 2/4: Checking inference providers...")
-			reg := provider.NewRegistry(wsl.Dist)
+			reg := provider.NewRegistry(targetDist)
 			statuses, err := reg.StatusAll(ctx)
 			if err != nil {
 				fmt.Printf("  ⚠ Could not check providers: %s\n", err)
@@ -137,15 +136,13 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 				}
 			}
 
-			// Step 3: Provision distro if needed
+			// Step 3: Provision distro if needed.
 			fmt.Println("\nStep 3/4: Ensuring distro is provisioned...")
-			m, manifestErr := config.LoadEffective("")
-			spec := domain.Environment{Name: wsl.Dist}
-			if manifestErr == nil && m != nil {
+			spec := domain.Environment{Name: targetDist, Distribution: targetDist}
+			if m != nil {
 				spec = m.EnvSpec()
-				if spec.Name == "" || strings.EqualFold(spec.Name, "local") {
-					spec.Name = wsl.Dist
-				}
+				spec.Name = targetDist
+				spec.Distribution = targetDist
 				if !cmd.Flags().Changed("user") && m.Jail.User != "" {
 					user = m.Jail.User
 				}
@@ -166,7 +163,7 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 				fmt.Printf("  ✓ Shell prompt & Windows Terminal style applied (%s)\n", resolvedStyle.Preset)
 			}
 
-			// Step 4: Import workspace
+			// Step 4: Import workspace.
 			fmt.Println("\nStep 4/4: Setting up workspace...")
 			if workspacePath == "" {
 				cwd, err := os.Getwd()
@@ -177,16 +174,16 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			}
 
 			wsName := filepath.Base(workspacePath)
-			if manifestErr == nil && m != nil && m.Workspace.Name != "" {
+			if m != nil && m.Workspace.Name != "" {
 				wsName = m.Workspace.Name
 			}
 			if wsName == "" || wsName == "." {
 				wsName = "project"
 			}
 
-			wsManager := workspace.NewManager(user)
-			importMode := workspace.ImportMode("bind") // prefer bind mounts for dev
-			if manifestErr == nil && m != nil && m.Workspace.ImportMode != "" {
+			wsManager := workspace.NewManager(targetDist, user)
+			importMode := workspace.ModeBind
+			if m != nil && m.Workspace.ImportMode != "" {
 				importMode = workspace.ImportMode(m.Workspace.ImportMode)
 			}
 
@@ -201,16 +198,8 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 				fmt.Printf("OK\n")
 			}
 
-			// Persist desired-state baseline to .lapel/state.db if a manifest is present
-			if manifestErr == nil && m != nil {
-				if st, err := openState(""); err == nil {
-					_, _ = persistBaseline(st, m)
-					_ = st.Close()
-				}
-			}
-
-			// Apply jail policies
-			fmt.Println("\nApplying jail policies...")
+			// Summarize jail controls that will be applied during `lapel run`.
+			fmt.Println("\nJail policy summary (applied at `lapel run`):")
 			profile := jail.Profile{
 				Name: "developer",
 				User: user,
@@ -221,17 +210,9 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			}
 
 			enforcer := jail.NewEnforcer(profile)
-			controls := enforcer.Controls()
-
-			fmt.Println("  Enforcement controls:")
-			for _, c := range controls {
-				symbol := "✓"
-				if c.Level == "partial" || c.Level == "unsupported" {
-					symbol = "⚠"
-				} else if c.Level == "none" {
-					symbol = "✗"
-				}
-				fmt.Printf("    %s %s: %s\n", symbol, c.Name, c.Details)
+			for _, c := range enforcer.Controls() {
+				symbol := jailControlSymbol(c.Level)
+				fmt.Printf("  %s %-18s [%s] %s\n", symbol, c.Name, c.Level, c.Details)
 			}
 
 			fmt.Println("\n=== Setup Complete ===")
@@ -244,7 +225,7 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 			fmt.Printf("\nNext steps:\n")
 			fmt.Printf("  • Open a shell in WSL: lapel shell (or restart Windows Terminal for the %q profile)\n", spec.Name)
 			fmt.Printf("  • Run your agent with: lapel run\n")
-			fmt.Printf("  • Sync VS Code plugins: lapel apply --plugin=kilo-code (or --all)\n")
+			fmt.Printf("  • Sync VS Code plugins: lapel plugin sync --plugin=kilo-code (or --all)\n")
 			fmt.Printf("  • Benchmark your rig: lapel benchmark\n")
 			fmt.Printf("  • Check provider status: lapel provider status\n")
 
@@ -252,12 +233,24 @@ If you're already set up, run setup again to refresh — it's idempotent.`,
 		},
 	}
 
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.Flags().StringVar(&workspacePath, "workspace", "", "path to workspace directory (default: current directory)")
 	cmd.Flags().StringVar(&user, "user", "agent", "Linux user for jail context")
 	cmd.Flags().BoolVar(&force, "force", false, "reimport workspace even if it exists")
 	cmd.Flags().BoolVar(&systemd, "systemd", true, "enable systemd in /etc/wsl.conf (use --systemd=false for lightweight sshd-only boot)")
 
 	return cmd
+}
+
+func jailControlSymbol(level jail.EnforcementLevel) string {
+	switch level {
+	case jail.Enforced:
+		return "✓"
+	case jail.Unsupported:
+		return "✗"
+	default: // jail.Requested, jail.NeedsConfig
+		return "⚠"
+	}
 }
 
 // anyInstalled returns true if at least one provider is installed.
@@ -272,9 +265,7 @@ func anyInstalled(statuses []*provider.ProviderStatus) bool {
 
 // windowsPathToLinux converts a Windows path to Linux format for jail filesystem scoping.
 func windowsPathToLinux(path string) string {
-	// Convert backslashes to forward slashes
 	path = strings.ReplaceAll(path, "\\", "/")
-	// Extract drive letter and convert to /mnt/<drive>/...
 	if len(path) >= 2 && path[1] == ':' {
 		drive := strings.ToLower(string(path[0]))
 		return fmt.Sprintf("/mnt/%s%s", drive, path[2:])

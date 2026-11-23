@@ -6,20 +6,14 @@ import (
 	"strings"
 )
 
-// KernelUpdateStatus represents the result of a kernel update check.
-type KernelUpdateStatus struct {
-	Available      bool   // true if an update is available
-	CurrentVersion string // current WSL version
-	Message        string // human-readable status message
+// KernelInfo represents a read-only snapshot of installed WSL and Linux kernel
+// versions (obtained via `wsl.exe --version`, never mutating the host).
+type KernelInfo struct {
+	WSLVersion    string // e.g. "2.4.13.0"
+	KernelVersion string // e.g. "5.15.167.4-1"
 }
 
 // GPUStatus represents the result of a GPU/CUDA detection check.
-// NVIDIA reports three version numbers that are now decoupled:
-//   - DriverVersion: Kernel Mode Driver (KMD) — proves GPU is functional.
-//     Not what ML runtimes link against; mainly useful for display/gaming.
-//   - CUDAVersion: User Mode Driver (UMD) CUDA runtime — this is what
-//     PyTorch/TensorFlow/llama.cpp actually use. For LLM inference,
-//     this is the signal that matters most.
 type GPUStatus struct {
 	CUDAVersion   string   // CUDA UMD runtime version (e.g., "13.5") — primary ML signal
 	DriverVersion string   // KMD driver version (e.g., "621.14") — GPU functional check
@@ -28,50 +22,31 @@ type GPUStatus struct {
 	Message       string   // human-readable status message
 }
 
-// CheckKernelUpdates checks whether a newer WSL kernel version is available.
-// Returns the update status and any error encountered during detection.
-func CheckKernelUpdates(ctx context.Context) (KernelUpdateStatus, error) {
-	out, err := runWslWith(ctx, []string{"--update"})
+// InspectKernelInfo reads the installed WSL and kernel version via
+// `wsl.exe --version`. It is strictly read-only and never invokes `--update`.
+func InspectKernelInfo(ctx context.Context) (KernelInfo, error) {
+	out, err := runWslWith(ctx, []string{"--version"})
 	if err != nil {
-		return KernelUpdateStatus{}, fmt.Errorf("checking kernel updates: %w", err)
+		return KernelInfo{}, fmt.Errorf("reading WSL version: %w", err)
 	}
-
-	status := KernelUpdateStatus{CurrentVersion: detectWSLVersion(ctx)}
-
-	// Parse the output to determine if an update is available.
-	// Expected messages:
-	// - "The most recent version of Windows Subsystem for Linux is already installed." (up to date)
-	// - "Downloading updates..." or similar indicates updates are being applied
-	// - If no specific message, assume up to date unless error occurred
-
-	out = strings.TrimSpace(out)
-	if strings.Contains(strings.ToLower(out), "already installed") {
-		status.Available = false
-		status.Message = "WSL kernel is up to date"
-	} else if out == "" || len(out) < 50 {
-		// Short or empty output likely means updates were applied (no specific message)
-		status.Available = true
-		status.Message = "WSL kernel update was applied"
-	} else {
-		// Assume up to date for any other reasonable output
-		status.Available = false
-		status.Message = out
-	}
-
-	return status, nil
+	return KernelInfo{
+		WSLVersion:    parseWSLVersionField(out, "wsl version:"),
+		KernelVersion: parseWSLVersionField(out, "kernel version:"),
+	}, nil
 }
 
 // CheckGPUStatus detects NVIDIA GPU and CUDA runtime availability in WSL2.
-// Returns the GPU status and any error encountered during detection.
-func CheckGPUStatus(ctx context.Context) (GPUStatus, error) {
+func CheckGPUStatus(ctx context.Context, dist string) (GPUStatus, error) {
+	if strings.TrimSpace(dist) == "" {
+		dist = DefaultDist
+	}
 	status := GPUStatus{
 		CUDAVersion:   "unknown",
 		DriverVersion: "unknown",
 		Message:       "checking...",
 	}
 
-	// Try to detect NVIDIA GPU via nvidia-smi (via stdin with full path)
-	out, err := runWslWithInput(ctx, []string{"-d", Dist, "bash"}, `/usr/lib/wsl/lib/nvidia-smi --query-gpu=name,driver_version --format=csv,noheader`)
+	out, err := runWslWithInput(ctx, []string{"-d", dist, "bash"}, `/usr/lib/wsl/lib/nvidia-smi --query-gpu=name,driver_version --format=csv,noheader`)
 	if err != nil {
 		status.Message = fmt.Sprintf("NVIDIA GPU not detected: %v", err)
 		return status, nil
@@ -83,9 +58,7 @@ func CheckGPUStatus(ctx context.Context) (GPUStatus, error) {
 		return status, nil
 	}
 
-	// Parse nvidia-smi output (comma-separated: name,driver_version)
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
+	for _, line := range strings.Split(out, "\n") {
 		parts := strings.SplitN(line, ",", 2)
 		if len(parts) == 2 {
 			gpuName := strings.TrimSpace(parts[0])
@@ -97,40 +70,18 @@ func CheckGPUStatus(ctx context.Context) (GPUStatus, error) {
 		}
 	}
 
-	// Get CUDA UMD runtime version from nvidia-smi header.
-	// Priority: "CUDA UMD Version" (user-mode driver, what ML runtimes use)
-	// over "CUDA Version" (legacy/compatibility line).
-	outFull, _ := runWslWith(ctx, []string{"-d", Dist, "bash", "-c", `nvidia-smi`})
+	outFull, _ := runWslWithInput(ctx, []string{"-d", dist, "bash"}, `/usr/lib/wsl/lib/nvidia-smi`)
 	if outFull != "" {
 		for _, line := range strings.Split(outFull, "\n") {
 			if idx := strings.Index(line, "CUDA UMD Version: "); idx != -1 {
-				rest := line[idx+len("CUDA UMD Version: "):]
-				// Extract version number (digits and dots) until non-version char
-				ver := ""
-				for _, ch := range rest {
-					if (ch >= '0' && ch <= '9') || ch == '.' {
-						ver += string(ch)
-					} else if ver != "" {
-						break
-					}
-				}
-				if ver != "" {
+				if ver := extractVersionToken(line[idx+len("CUDA UMD Version: "):]); ver != "" {
 					status.CUDAVersion = ver
 					break
 				}
 			}
 			if status.CUDAVersion == "unknown" || status.CUDAVersion == "" {
 				if idx := strings.Index(line, "CUDA Version: "); idx != -1 {
-					rest := line[idx+len("CUDA Version: "):]
-					ver := ""
-					for _, ch := range rest {
-						if (ch >= '0' && ch <= '9') || ch == '.' {
-							ver += string(ch)
-						} else if ver != "" {
-							break
-						}
-					}
-					if ver != "" {
+					if ver := extractVersionToken(line[idx+len("CUDA Version: "):]); ver != "" {
 						status.CUDAVersion = ver
 					}
 				}
@@ -149,4 +100,16 @@ func CheckGPUStatus(ctx context.Context) (GPUStatus, error) {
 	}
 
 	return status, nil
+}
+
+func extractVersionToken(rest string) string {
+	var b strings.Builder
+	for _, ch := range rest {
+		if (ch >= '0' && ch <= '9') || ch == '.' {
+			b.WriteRune(ch)
+		} else if b.Len() > 0 {
+			break
+		}
+	}
+	return b.String()
 }

@@ -22,7 +22,8 @@ func (a *PiAgent) Name() string   { return "pi" }
 func (a *PiAgent) Binary() string { return "pi" }
 
 func (a *PiAgent) Detect(ctx context.Context) (bool, error) {
-	return detectBinaryInWSL(ctx, a.dist, "pi")
+	_, ok, err := detectBinaryInWSL(ctx, a.dist, "pi")
+	return ok, err
 }
 
 func (a *PiAgent) Configure(env map[string]string, providerURL string, model string) {

@@ -13,7 +13,7 @@ func (e *ErrNotInstalled) Error() string {
 
 // ErrServerDown indicates the provider server is not running.
 type ErrServerDown struct {
-	Name string
+	Name   string
 	Detail string
 }
 

@@ -16,13 +16,35 @@ import (
 	"lapel/internal/hardware"
 )
 
+// communityHTTPClient disables automatic redirect following so a DNS redirect
+// (e.g. a parking page or marketing site returning 302 -> 200 HTML) can never
+// be mistaken for an accepted API request.
+var communityHTTPClient = &http.Client{
+	Timeout: 5 * time.Second,
+	CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
+
+// hashPrefix returns up to n characters of h without panicking on short strings.
+func hashPrefix(h string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if len(h) <= n {
+		return h
+	}
+	return h[:n]
+}
+
 // communityCmd is the parent command for community features.
 func communityCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "community",
 		Short: "Manage opt-in community hardware profiles, benchmarks, and tuning insights",
 		Long: `Query verified hardware tuning profiles or share your benchmark results with
-the lapel community (strictly opt-in via LAPEL_COMMUNITY_ENABLED=true).
+a configured community backend (strictly opt-in via LAPEL_COMMUNITY_ENABLED=true
+and LAPEL_COMMUNITY_ENDPOINT=<url>).
 
 Commands:
   status     - View your detected hardware hash and community connection status
@@ -64,7 +86,7 @@ func buildHardwareProfile(ctx context.Context) (community.HardwareProfile, *hard
 	return profile, hwInfo, nil
 }
 
-// communityStatusCmd shows your profile and recent reports.
+// communityStatusCmd shows your profile and community feature status.
 func communityStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
@@ -81,14 +103,18 @@ func communityStatusCmd() *cobra.Command {
 				fmt.Println("Community features: disabled (default opt-in privacy mode)")
 				fmt.Printf("Local hardware hash: %s\n", hash)
 				fmt.Println("\nTo enable opt-in community tuning insights and benchmark sharing:")
-				fmt.Println("  LAPEL_COMMUNITY_ENABLED=true lapel community status")
+				fmt.Println("  LAPEL_COMMUNITY_ENABLED=true LAPEL_COMMUNITY_ENDPOINT=<url> lapel community status")
 				return nil
 			}
 
 			endpoint := features.GetEndpoint()
+			endpointDisplay := endpoint
+			if endpointDisplay == "" {
+				endpointDisplay = "(unset — set LAPEL_COMMUNITY_ENDPOINT or LAPEL_USE_OFFICIAL_BACKEND=false)"
+			}
 			fmt.Println("Community features: enabled (opt-in)")
-			fmt.Printf("Target endpoint:    %s\n", endpoint)
-			fmt.Printf("Hardware hash:      %s (tier prefix: %s)\n", hash, hash[:8])
+			fmt.Printf("Target endpoint:    %s\n", endpointDisplay)
+			fmt.Printf("Hardware hash:      %s (tier prefix: %s)\n", hash, hashPrefix(hash, 8))
 			if len(profile.GPUs) > 0 {
 				fmt.Printf("Detected GPU:       %s (%d GB VRAM)\n", profile.GPUs[0].Name, profile.GPUs[0].VRAMGB)
 			}
@@ -112,9 +138,10 @@ func communityShareCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "share",
-		Short: "Share session benchmark data with the community (opt-in)",
+		Short: "Share session benchmark data with a configured community backend (opt-in)",
 		Long: `Record your model usage, VRAM consumption, batch size, and token rate.
-This helps other users with similar hardware get verified tuning profiles.`,
+Requires LAPEL_COMMUNITY_ENABLED=true and an explicit LAPEL_COMMUNITY_ENDPOINT
+(or LAPEL_USE_OFFICIAL_BACKEND=false for a local self-hosted backend).`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !features.IsEnabled(features.CommunityEnabled) {
 				fmt.Println("Community features are disabled (strictly opt-in).")
@@ -128,7 +155,7 @@ This helps other users with similar hardware get verified tuning profiles.`,
 
 			ctx := cmd.Context()
 			profile, _, err := buildHardwareProfile(ctx)
-			hash := "unknown-hw-hash0"
+			hash := "unknown"
 			if err == nil {
 				hash = profile.Hash()
 			}
@@ -160,11 +187,12 @@ This helps other users with similar hardware get verified tuning profiles.`,
 			}
 
 			endpoint := features.GetEndpoint()
+			if endpoint == "" {
+				return fmt.Errorf("no community endpoint configured; set LAPEL_COMMUNITY_ENDPOINT=<url> (or use --dry-run)")
+			}
 			fmt.Printf("\nSubmitting report to %s...\n", endpoint)
 			if err := shareReport(endpoint, report); err != nil {
-				fmt.Printf("⚠ Could not reach community backend (%v).\n", err)
-				fmt.Println("  Use --dry-run to preview locally or set LAPEL_COMMUNITY_ENDPOINT to a running backend.")
-				return nil
+				return fmt.Errorf("submitting report to %s: %w", endpoint, err)
 			}
 
 			fmt.Println("✓ Benchmark report submitted. Thank you for contributing!")
@@ -188,12 +216,12 @@ func communityInsightsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "insights",
 		Short: "Get hardware-matched tuning recommendations",
-		Long: `Fetch verified tuning recommendations for your GPU and RAM tier from the
-community backend, falling back to local hardware heuristics when offline.`,
+		Long: `Fetch verified tuning recommendations for your GPU and RAM tier from a
+configured community backend, falling back to local hardware heuristics when offline.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			profile, hwInfo, hwErr := buildHardwareProfile(ctx)
-			hash := "unknown-hw-hash0"
+			hash := "unknown"
 			if hwErr == nil {
 				hash = profile.Hash()
 			}
@@ -203,21 +231,24 @@ community backend, falling back to local hardware heuristics when offline.`,
 
 			if features.IsEnabled(features.CommunityEnabled) {
 				endpoint := features.GetEndpoint()
-				fmt.Printf("Querying tuning profiles from %s (hardware hash: %s)...\n", endpoint, hash)
-				recs, err := fetchRecommendations(endpoint, hash, limit)
-				if err == nil && len(recs) > 0 {
-					recommendations = recs
-					sourceLabel = fmt.Sprintf("community backend (%s)", endpoint)
-				} else if err != nil {
-					fmt.Printf("  ℹ Backend unreachable (%v); using local hardware heuristic.\n", err)
+				if endpoint == "" {
+					fmt.Println("  ℹ No LAPEL_COMMUNITY_ENDPOINT configured; using local hardware heuristic.")
 				} else {
-					fmt.Println("  ℹ No matching community reports found yet; using local hardware heuristic.")
+					fmt.Printf("Querying tuning profiles from %s (hardware hash: %s)...\n", endpoint, hash)
+					recs, err := fetchRecommendations(endpoint, hash, limit)
+					if err == nil && len(recs) > 0 {
+						recommendations = recs
+						sourceLabel = fmt.Sprintf("community backend (%s)", endpoint)
+					} else if err != nil {
+						fmt.Printf("  ℹ Backend unreachable (%v); using local hardware heuristic.\n", err)
+					} else {
+						fmt.Println("  ℹ No matching community reports found yet; using local hardware heuristic.")
+					}
 				}
 			} else {
 				fmt.Println("ℹ Community network disabled (opt-in); computing local hardware tuning heuristic.")
 			}
 
-			// Fallback to local deterministic hardware recommendation when offline or empty.
 			if len(recommendations) == 0 && hwInfo != nil {
 				rec := hardware.NewDefaultRecommender().Recommend(hwInfo)
 				recommendations = []community.Recommendation{
@@ -260,18 +291,23 @@ func normalizeAPIEndpoint(endpoint string) string {
 	return ep
 }
 
-// fetchRecommendations makes an HTTP request to the backend API.
+// fetchRecommendations makes an HTTP request to the backend API without following redirects.
 func fetchRecommendations(endpoint string, hash string, limit int) ([]community.Recommendation, error) {
 	base := normalizeAPIEndpoint(endpoint)
+	if base == "" {
+		return nil, fmt.Errorf("community endpoint is empty")
+	}
 	url := fmt.Sprintf("%s/api/v1/recommendations?hash=%s&limit=%d", base, hash, limit)
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := communityHTTPClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, fmt.Errorf("refused HTTP %d redirect to %q (check LAPEL_COMMUNITY_ENDPOINT)", resp.StatusCode, resp.Header.Get("Location"))
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
@@ -284,9 +320,12 @@ func fetchRecommendations(endpoint string, hash string, limit int) ([]community.
 	return recommendations, nil
 }
 
-// shareReport sends a performance report to the backend API.
+// shareReport sends a performance report to the backend API without following redirects.
 func shareReport(endpoint string, report community.Report) error {
 	base := normalizeAPIEndpoint(endpoint)
+	if base == "" {
+		return fmt.Errorf("community endpoint is empty")
+	}
 	url := fmt.Sprintf("%s/api/v1/reports", base)
 
 	data, err := json.Marshal(report)
@@ -294,13 +333,15 @@ func shareReport(endpoint string, report community.Report) error {
 		return fmt.Errorf("marshaling report: %w", err)
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
+	resp, err := communityHTTPClient.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return fmt.Errorf("refused HTTP %d redirect to %q (check LAPEL_COMMUNITY_ENDPOINT)", resp.StatusCode, resp.Header.Get("Location"))
+	}
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("API returned status %d", resp.StatusCode)
 	}

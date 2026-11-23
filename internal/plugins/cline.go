@@ -29,7 +29,7 @@ func (p *ClinePlugin) ConfigPath() string {
 	return filepath.Join(userHomeDir(), ".cline", "settings.json")
 }
 
-func (p *ClinePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error) {
+func buildClineConfig(providers []ProviderSpec) ClineConfig {
 	cfg := ClineConfig{
 		APIProvider:   "openai",
 		OpenAIBaseURL: "http://127.0.0.1:1234/v1",
@@ -48,14 +48,37 @@ func (p *ClinePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error) {
 			cfg.AvailableModels = append(cfg.AvailableModels, m)
 		}
 	}
-
-	return json.MarshalIndent(cfg, "", "  ")
+	return cfg
 }
 
+func (p *ClinePlugin) GenerateConfig(providers []ProviderSpec) ([]byte, error) {
+	return json.MarshalIndent(buildClineConfig(providers), "", "  ")
+}
+
+// Apply merges lapel's OpenAI-compatible provider settings into ~/.cline/settings.json,
+// preserving all other existing user keys, and backs up any existing file to .bak.
 func (p *ClinePlugin) Apply(providers []ProviderSpec) (string, error) {
-	data, err := p.GenerateConfig(providers)
+	target := p.ConfigPath()
+	existing, err := readExistingJSONObject(target)
 	if err != nil {
 		return "", err
 	}
-	return writeConfigFile(p.ConfigPath(), data)
+
+	cfg := buildClineConfig(providers)
+	existing["apiProvider"] = cfg.APIProvider
+	existing["openAiBaseUrl"] = cfg.OpenAIBaseURL
+	existing["openAiModelId"] = cfg.OpenAIModelID
+	existing["openAiApiKey"] = cfg.OpenAIAPIKey
+	if cfg.ContextWindow > 0 {
+		existing["contextWindow"] = cfg.ContextWindow
+	}
+	if len(cfg.AvailableModels) > 0 {
+		existing["availableModels"] = cfg.AvailableModels
+	}
+
+	data, err := json.MarshalIndent(existing, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return writeConfigFile(target, data)
 }

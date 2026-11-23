@@ -18,11 +18,11 @@ var listDistros = wsl.ListDistros
 // human-readable note. It first checks from the WSL guest (rewriting
 // host.docker.internal/localhost to the resolved WSL gateway IP when available),
 // and also checks from the host HTTP client as a fallback.
-func checkReachable(baseURL string) (bool, string, error) {
+func checkReachable(distro, baseURL string) (bool, string, error) {
 	ctx := context.Background()
 	candidates := []string{baseURL}
 
-	if hostIP, err := provider.HostIP(ctx); err == nil && hostIP != "" {
+	if hostIP, err := provider.HostIP(ctx, distro); err == nil && hostIP != "" {
 		for _, placeholder := range []string{"host.docker.internal", "127.0.0.1", "localhost"} {
 			if strings.Contains(baseURL, placeholder) {
 				rewritten := strings.Replace(baseURL, placeholder, hostIP, 1)
@@ -34,7 +34,7 @@ func checkReachable(baseURL string) (bool, string, error) {
 
 	var lastRes provider.Result
 	for _, target := range candidates {
-		res := provider.CheckEndpoint(ctx, target, 3*time.Second)
+		res := provider.CheckEndpoint(ctx, target, 3*time.Second, distro)
 		lastRes = res
 		if res.Status == "ok" {
 			return true, "reachable (" + res.Detail + ")", nil

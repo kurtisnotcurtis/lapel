@@ -34,20 +34,17 @@ func TestRootfsURLDefaultsToLatestUbuntu(t *testing.T) {
 func TestRootfsURLUnknownUbuntuVersion(t *testing.T) {
 	if _, err := RootfsURL("ubuntu", "99.99"); err == nil {
 		t.Error("expected error for unknown Ubuntu version 99.99")
-	} else if !strings.Contains(err.Error(), "RootFSImageOverride") {
-		t.Errorf("error should mention RootFSImageOverride, got: %v", err)
+	} else if !strings.Contains(err.Error(), "unsupported Ubuntu version") {
+		t.Errorf("unexpected error for unknown Ubuntu version: %v", err)
 	}
 }
 
 func TestRootfsURLDebian(t *testing.T) {
-	// Debian's cloud mirrors only publish full disk images (checked
-	// bookworm and trixie in 2026-07), which wsl --import cannot consume, so
-	// RootfsURL must fail with a pointer to the override knob.
 	for _, ver := range []string{"11", "12", "13"} {
 		if got, err := RootfsURL("debian", ver); err == nil {
 			t.Errorf("RootfsURL(debian,%s) = %q, want error", ver, got)
-		} else if !strings.Contains(err.Error(), "RootFSImageOverride") {
-			t.Errorf("RootfsURL(debian,%s) error should mention RootFSImageOverride, got: %v", ver, err)
+		} else if !strings.Contains(err.Error(), "ubuntu") {
+			t.Errorf("RootfsURL(debian,%s) error should point to ubuntu, got: %v", ver, err)
 		}
 	}
 }
@@ -67,16 +64,50 @@ func TestDefaultVersion(t *testing.T) {
 	}
 }
 
-func TestCodenameForDebian(t *testing.T) {
+func TestSanitizeDefaultUsername(t *testing.T) {
 	cases := map[string]string{
-		"11": "bullseye",
-		"12": "bookworm",
-		"99": "bookworm", // unknown falls back to current stable codename
+		"Kurt":        "kurt",
+		"John.Doe":    "john_doe",
+		"Alice Smith": "alice_smith",
+		"123user":     "u123user",
+		"   ":         "",
 	}
-	for ver, want := range cases {
-		if got := codenameForDebian(ver); got != want {
-			t.Errorf("codenameForDebian(%s) = %q, want %q", ver, got, want)
+	for in, want := range cases {
+		got := sanitizeDefaultUsername(in)
+		if got != want {
+			t.Errorf("sanitizeDefaultUsername(%q) = %q, want %q", in, got, want)
 		}
+		if got != "" {
+			if err := validateUsername(got); err != nil {
+				t.Errorf("sanitized username %q failed validation: %v", got, err)
+			}
+		}
+	}
+}
+
+func TestDefaultProvisionOptionsCarriesBaseAndVersion(t *testing.T) {
+	opts := DefaultProvisionOptions(domain.Environment{
+		Distribution: "custom-distro",
+		Base:         "ubuntu",
+		Version:      "22.04",
+	})
+	if opts.Name != "custom-distro" {
+		t.Errorf("Name = %q, want custom-distro", opts.Name)
+	}
+	if opts.Base != "ubuntu" || opts.Version != "22.04" {
+		t.Errorf("Base/Version = %q/%q, want ubuntu/22.04", opts.Base, opts.Version)
+	}
+}
+
+func TestImportMinimalDistroRejectsInvalidUserBeforeImport(t *testing.T) {
+	err := ImportMinimalDistro(t.Context(), ProvisionOptions{
+		Name:        "should-never-import",
+		Base:        "ubuntu",
+		Version:     "24.04",
+		DefaultUser: "John.Doe",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid default user") {
+		t.Fatalf("expected upfront invalid default user error, got %v", err)
 	}
 }
 

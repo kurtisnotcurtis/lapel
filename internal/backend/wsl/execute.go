@@ -3,25 +3,21 @@ package wsl
 import (
 	"bytes"
 	"context"
-	crypto_rand "crypto/rand"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
-	math_rand "math/rand"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"lapel/internal/domain"
 )
 
 // shellQuote returns a POSIX-safe single-quoted representation of s so that an
-// untrusted value cannot be interpreted by the shell (spec 8: no concatenation
-// of arbitrary values into command text).
+// untrusted value cannot be interpreted by the shell.
 func shellQuote(s string) string {
-	// POSIX single-quote escaping: wrap in '...'; a lone ' becomes '\''.
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
@@ -34,9 +30,7 @@ func isRoot(ctx context.Context, dist string) bool {
 
 // runScript pipes a bash script into the named distro via stdin (bash reads
 // it as its command input) instead of passing it as a -c argument. WSL 3.0.3.0
-// mangles $(...) in argv — even inside quotes, command substitutions are
-// pre-evaluated or stripped before bash ever sees them (verified 2026-11),
-// which silently corrupts scripts; stdin passes through intact.
+// mangles $(...) in argv, whereas stdin passes through intact.
 func runScript(ctx context.Context, dist, script string, asRoot bool) (string, error) {
 	return runScriptStream(ctx, dist, script, asRoot, nil)
 }
@@ -51,9 +45,7 @@ func runScriptStream(ctx context.Context, dist, script string, asRoot bool, stre
 
 // runRoot runs a shell script inside the named distro with root privileges. If
 // that distro's default user is already root it runs directly; otherwise it
-// escalates via passwordless sudo (lapel-provisioned users get a
-// NOPASSWD drop-in at import time). On pre-existing distros without
-// passwordless sudo this fails with a hint.
+// escalates via passwordless sudo.
 func runRoot(ctx context.Context, dist, script string) (string, error) {
 	return runRootStream(ctx, dist, script, nil)
 }
@@ -75,8 +67,13 @@ func runRootStream(ctx context.Context, dist, script string, stream io.Writer) (
 // forwarded to `wsl.exe bash` via stdin, which WSL reliably passes through.
 func buildScript(workdir string, env map[string]string, cmd []string) string {
 	var b strings.Builder
-	for k, v := range env {
-		fmt.Fprintf(&b, "export %s=%s; ", shellQuote(k), shellQuote(v))
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(&b, "export %s=%s; ", shellQuote(k), shellQuote(env[k]))
 	}
 	if workdir != "" {
 		fmt.Fprintf(&b, "cd %s && ", shellQuote(workdir))
@@ -90,44 +87,110 @@ func buildScript(workdir string, env map[string]string, cmd []string) string {
 	return b.String()
 }
 
-// buildLaunchScript composes the bootstrap script for an interactive session
-// launched under setsid. It records the session leader PID (== PGID) to pgFile,
-// exports environment variables, changes to workdir, and finally replaces the
-// shell with the target command via `exec` so the target command inherits the
-// session leader PID/PGID without double-quoting the compound script.
-func buildLaunchScript(pgFile, workdir string, env map[string]string, cmd []string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "echo $$ > %s\n", shellQuote(pgFile))
-	for k, v := range env {
-		fmt.Fprintf(&b, "export %s=%s\n", shellQuote(k), shellQuote(v))
+// buildInteractiveWSLArgs constructs the `wsl.exe` argv for an interactive
+// session that inherits the user's terminal (stdin/stdout/stderr), applies the
+// requested distro and Linux user (`-u`), sets environment variables via
+// `env(1)`, changes into the requested working directory (falling back to
+// $HOME if unavailable), and execs the target command cleanly.
+func buildInteractiveWSLArgs(defaultDist string, req domain.ExecRequest) ([]string, error) {
+	dist := strings.TrimSpace(req.Dist)
+	if dist == "" {
+		dist = strings.TrimSpace(defaultDist)
 	}
-	if workdir != "" {
-		fmt.Fprintf(&b, "cd %s 2>/dev/null || cd \"$HOME\" 2>/dev/null || true\n", shellQuote(workdir))
+	if dist == "" {
+		dist = DefaultDist
 	}
-	if len(cmd) > 0 {
-		b.WriteString("exec")
-		for _, a := range cmd {
-			b.WriteByte(' ')
-			b.WriteString(shellQuote(a))
+
+	args := []string{"-d", dist}
+	if u := strings.TrimSpace(req.User); u != "" {
+		if err := validateUsername(u); err != nil {
+			return nil, fmt.Errorf("invalid session user: %w", err)
 		}
-		b.WriteByte('\n')
+		args = append(args, "-u", u)
 	}
-	return b.String()
+	args = append(args, "--")
+
+	// Inject environment variables via env(1) with sorted keys for determinism.
+	if len(req.Env) > 0 {
+		keys := make([]string, 0, len(req.Env))
+		for k := range req.Env {
+			if strings.ContainsRune(k, '=') || k == "" {
+				continue
+			}
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		if len(keys) > 0 {
+			args = append(args, "env")
+			for _, k := range keys {
+				args = append(args, k+"="+req.Env[k])
+			}
+		}
+	}
+
+	cmd := req.Cmd
+	if len(cmd) == 0 {
+		cmd = []string{"bash", "-l"}
+	}
+
+	if wd := strings.TrimSpace(req.WorkingDir); wd != "" {
+		// Pass workdir and command positionally to sh -c so no untrusted value
+		// is ever concatenated into shell syntax and no $(...) appears in argv.
+		args = append(args, "sh", "-c", `cd "$1" 2>/dev/null || cd "$HOME" 2>/dev/null || true; shift; exec "$@"`, "_", wd)
+		args = append(args, cmd...)
+	} else {
+		args = append(args, cmd...)
+	}
+
+	return args, nil
 }
 
-// Exec runs a structured command inside the distro. The command and its args
-// are each individually quoted and assembled into one script string, so no
-// untrusted value is ever interpolated as shell syntax (spec 8). The script
-// travels via stdin, not as a -c argument: WSL mangles $(...) in argv
-// (verified 2026-11), which would corrupt user commands containing command
-// substitutions.
+// RunInteractive runs a command inside WSL attached directly to the current
+// terminal (os.Stdin, os.Stdout, os.Stderr), returning the child process's
+// exit code. A non-zero child exit code is returned as (exitCode, nil); only
+// launch/transport failures return a non-nil error.
+func (b *DistBackend) RunInteractive(ctx context.Context, req domain.ExecRequest) (int, error) {
+	wslArgs, err := buildInteractiveWSLArgs(b.dist(), req)
+	if err != nil {
+		return 1, err
+	}
+
+	cmd := exec.CommandContext(ctx, "wsl.exe", wslArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return ee.ExitCode(), nil
+		}
+		return 1, fmt.Errorf("wsl.exe failed: %w", err)
+	}
+	return 0, nil
+}
+
+// Exec runs a structured non-interactive command inside the distro. The command
+// and its args are each individually quoted and assembled into one script string
+// forwarded via stdin so WSL cannot mangle $(...) in argv.
 func (b *DistBackend) Exec(ctx context.Context, req domain.ExecRequest) (*domain.ExecResult, error) {
+	dist := strings.TrimSpace(req.Dist)
+	if dist == "" {
+		dist = b.dist()
+	}
+
+	var cmdArgs []string
+	cmdArgs = append(cmdArgs, "-d", dist)
+	if u := strings.TrimSpace(req.User); u != "" {
+		if err := validateUsername(u); err != nil {
+			return nil, fmt.Errorf("invalid exec user: %w", err)
+		}
+		cmdArgs = append(cmdArgs, "-u", u)
+	}
+	cmdArgs = append(cmdArgs, "bash")
+
 	script := buildScript(req.WorkingDir, req.Env, req.Cmd)
-	// NOTE: assign wslArgs to a local first — go1.27 fails to type-check a spread
-	// expression nested inside another multi-argument call in some shapes.
-	cmdArgs := wslArgs("bash")
 	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
-	setOwnProcessGroup(cmd) // own process group for clean teardown (no-op on Windows)
 
 	var out, errb bytes.Buffer
 	cmd.Stdin = strings.NewReader(script)
@@ -141,191 +204,12 @@ func (b *DistBackend) Exec(ctx context.Context, req domain.ExecRequest) (*domain
 		Duration: time.Since(start),
 	}
 	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			res.ExitCode = int(ee.ExitCode())
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			res.ExitCode = ee.ExitCode()
 		} else {
 			return res, fmt.Errorf("wsl.exe failed to start: %w", err)
 		}
 	}
 	return res, nil
-}
-
-// Process is a launched interactive session (one long-lived wsl.exe handle).
-type Process struct {
-	cmd    *exec.Cmd
-	pgid   int    // host-side wsl.exe process-group id (teardown belt)
-	pgFile string // guest path holding the setsid leader pid == pgid
-	tag    string // unique session tag for diagnostics
-	stdin  io.WriteCloser
-	done   chan struct{}
-	closeW sync.Once
-	waitCh chan waitOutcome
-}
-
-// waitOutcome carries a session's Wait result and error.
-type waitOutcome struct {
-	res *domain.ExecResult
-	err error
-}
-
-// randTag returns a short random identifier used to build per-session files.
-func randTag() string {
-	b := make([]byte, 6)
-	if _, err := crypto_rand.Read(b); err != nil { // crypto/rand; fallback if it ever fails
-		math_rand.Seed(time.Now().UnixNano())
-		for i := range b {
-			b[i] = byte(math_rand.Intn(256))
-		}
-	}
-	return hex.EncodeToString(b)
-}
-
-// Launch starts an interactive command in its own process group and streams I/O.
-// The guest session leader is setsid'd so its pid == pgid; that id is written to
-// a durable file inside the distro. Stop kills that group from INSIDE the guest,
-// which reliably tears down descendants even though closing the wsl.exe handle
-// alone does not (probe 2).
-func (b *DistBackend) Launch(ctx context.Context, req domain.ExecRequest) (*Process, error) {
-	tag := randTag()
-	pgFile := "/tmp/lapel-" + tag + ".pg"
-	scriptPath := "/tmp/lapel-" + tag + ".sh"
-	inner := buildLaunchScript(pgFile, req.WorkingDir, req.Env, req.Cmd)
-	// The bootstrap cannot travel as a -c argument (WSL mangles $(...) in argv,
-	// verified 2026-11) and stdin is reserved for interactive input, so write
-	// it to a file first via a heredoc. The quoted delimiter keeps the content
-	// literal.
-	writeArgs := wslArgs("bash")
-	wcmd := exec.CommandContext(ctx, "wsl.exe", writeArgs...)
-	var wout, werrb bytes.Buffer
-	wcmd.Stdout = &wout
-	wcmd.Stderr = &werrb
-	heredoc := fmt.Sprintf("cat > %s <<'TB_%s'\n%s\nTB_%s\n", shellQuote(scriptPath), tag, inner, tag)
-	wcmd.Stdin = strings.NewReader(heredoc)
-	if err := wcmd.Run(); err != nil {
-		return nil, fmt.Errorf("write bootstrap script: %s: %w", sanitize(wout.String()+"\n"+werrb.String()), err)
-	}
-	// Main session: setsid makes bash the guest session leader (pid == pgid).
-	cmdArgs := wslArgs("setsid", "bash", scriptPath)
-	cmd := exec.CommandContext(ctx, "wsl.exe", cmdArgs...)
-	setOwnProcessGroup(cmd)
-
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stdin pipe: %w", err)
-	}
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stdout pipe: %w", err)
-	}
-	errPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stderr pipe: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start wsl.exe: %w", err)
-	}
-
-	pgid, err := pgidOf(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("get process group: %w", err)
-	}
-
-	p := &Process{cmd: cmd, pgid: pgid, pgFile: pgFile, tag: tag, stdin: stdin, done: make(chan struct{}), waitCh: make(chan waitOutcome, 1)}
-	go func() { io.Copy(os.Stdout, out) }()
-	go func() { io.Copy(os.Stderr, errPipe) }()
-	go func() {
-		res, err := waitResult(cmd.Wait())
-		p.closeW.Do(func() { close(p.done) })
-		p.waitCh <- waitOutcome{res: res, err: err}
-	}()
-	return p, nil
-}
-
-// waitResult converts a cmd.Wait outcome into (result, error): exit-code errors
-// are folded into ExecResult.ExitCode with a nil error; transport errors return
-// a nil result and the wrapped error.
-func waitResult(err error) (*domain.ExecResult, error) {
-	if err == nil {
-		return nil, nil
-	}
-	res := &domain.ExecResult{}
-	if ee, ok := err.(*exec.ExitError); ok {
-		res.ExitCode = int(ee.ExitCode())
-		return res, nil
-	}
-	return res, err
-}
-
-// Wait blocks until the process exits and returns its result. It is idempotent:
-// the first call caches the outcome so repeated calls (and Stop's internal wait)
-// do not race on cmd.Wait.
-func (p *Process) Wait() (*domain.ExecResult, error) {
-	<-p.done
-	o := <-p.waitCh
-	return o.res, o.err
-}
-
-// Stop terminates the session from INSIDE the guest (kills its process group),
-// then closes the host-side wsl.exe handle. Killing the group by the id captured
-// at launch reliably removes descendant processes that closing the connection
-// alone leaves behind (probe 2). SIGKILL is used as a fallback if TERM stalls.
-func (p *Process) Stop() error {
-	ctx := context.Background()
-
-	// Definitive guest-side teardown by process-group id written at launch.
-	pg := readPg(ctx, p.pgFile)
-	if pg != "" {
-		killScript := fmt.Sprintf("kill -TERM -%s 2>/dev/null; sleep 1; kill -KILL -%s 2>/dev/null", shellQuote(pg), shellQuote(pg))
-		// best-effort; ignore errors (process may already be gone)
-		_, err := runWslWithInput(ctx, wslArgs("bash"), killScript)
-		if err != nil {
-			// Log but don't fail - process might have exited on its own
-			fmt.Printf("[WARN] guest-side kill for pg %s: %v\n", pg, err)
-		}
-	} else {
-		// Fallback: try to find and kill any lingering processes
-		fmt.Printf("[INFO] No process group file found, attempting fallback cleanup\n")
-	}
-
-	// Host-side belt: close the wsl.exe handle.
-	if p.cmd.Process != nil {
-		_ = killProcessGroup(p.pgid)
-		p.closeW.Do(func() { <-p.done })
-	}
-	return nil
-}
-
-// readPg returns the session leader pid (== pgid) captured at launch.
-func readPg(ctx context.Context, path string) string {
-	out, err := runWsl(ctx, "cat", path)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(out)
-}
-
-// Stdin returns the process stdin writer for interactive input.
-func (p *Process) Stdin() io.Writer { return p.stdin }
-
-// PID returns the wsl.exe host pid.
-func (p *Process) PID() int { return p.cmd.Process.Pid }
-
-// CountChildren counts guest processes whose command line's first token equals
-// pattern exactly. Exact-first-field matching avoids false positives from our own
-// wsl.exe handles (whose command lines embed the full script) and is what session
-// teardown verification relies on to confirm no orphans remain (probe 2).
-func CountChildren(ctx context.Context, pattern string) (int, error) {
-	script := fmt.Sprintf("ps -eo args= | awk '$1==%s {c++} END{print c+0}'", shellQuote(pattern))
-	out, err := runWslWithInput(ctx, wslArgs("bash"), script)
-	if err != nil {
-		return 0, err
-	}
-	count := 0
-	for _, r := range strings.TrimSpace(out) {
-		if r < '0' || r > '9' {
-			break
-		}
-		count = count*10 + int(r-'0')
-	}
-	return count, nil
 }

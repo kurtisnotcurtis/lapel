@@ -38,18 +38,15 @@ Pass --wt to open the shell in a new Windows Terminal tab.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			targetDistro := wsl.Dist
+			m, err := config.LoadOptional("")
+			if err != nil {
+				return err
+			}
 			styleSpec := domain.EnvironmentStyle{}
-			if m, err := config.LoadEffective(""); err == nil && m != nil {
-				envSpec := m.EnvSpec()
-				if envSpec.Distribution != "" {
-					targetDistro = envSpec.Distribution
-				}
-				styleSpec = envSpec.Style
+			if m != nil {
+				styleSpec = m.EnvSpec().Style
 			}
-			if cmd.Flags().Changed("distro") && strings.TrimSpace(distro) != "" {
-				targetDistro = strings.TrimSpace(distro)
-			}
+			targetDistro := resolveDistro(distro, m)
 
 			// Verify WSL and the target distribution exist before attaching.
 			if _, err := exec.LookPath("wsl.exe"); err != nil {
@@ -94,10 +91,11 @@ Pass --wt to open the shell in a new Windows Terminal tab.`,
 
 			if err := c.Run(); err != nil {
 				var ee *exec.ExitError
-				if errors.As(err, &ee) && len(args) == 0 {
-					// Interactive shells exit with the status of the last command run;
-					// don't print a noisy Cobra error banner on normal exit.
-					return nil
+				if errors.As(err, &ee) {
+					if len(args) == 0 {
+						return nil
+					}
+					return &ExitCodeError{Code: ee.ExitCode()}
 				}
 				return err
 			}
@@ -105,7 +103,7 @@ Pass --wt to open the shell in a new Windows Terminal tab.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: lapel or manifest distribution)")
+	cmd.Flags().StringVarP(&distro, "distro", "d", "", "WSL distribution name (default: manifest distribution or lapel)")
 	cmd.Flags().StringVarP(&user, "user", "u", "", "Linux user inside WSL (default: distro default user)")
 	cmd.Flags().StringVar(&cdDir, "cd", "~", "starting directory inside WSL (use '.' for current directory)")
 	cmd.Flags().BoolVar(&inWT, "wt", false, "open the shell in a new Windows Terminal tab")

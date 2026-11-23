@@ -6,10 +6,10 @@ import "context"
 
 // Info holds detected system resource information.
 type Info struct {
-	GPU    GPUInfo   `json:"gpu"`
-	RAM    RAMInfo   `json:"ram"`
-	CPU    CPUInfo   `json:"cpu"`
-	OS     string    `json:"os"` // "windows", "linux"
+	GPU GPUInfo `json:"gpu"`
+	RAM RAMInfo `json:"ram"`
+	CPU CPUInfo `json:"cpu"`
+	OS  string  `json:"os"` // "windows", "linux"
 }
 
 // IsLinux returns true if we're running on Linux (WSL).

@@ -22,7 +22,8 @@ func (a *ClaudeCodeAgent) Name() string   { return "claude-code" }
 func (a *ClaudeCodeAgent) Binary() string { return "claude" }
 
 func (a *ClaudeCodeAgent) Detect(ctx context.Context) (bool, error) {
-	return detectBinaryInWSL(ctx, a.dist, "claude")
+	_, ok, err := detectBinaryInWSL(ctx, a.dist, "claude")
+	return ok, err
 }
 
 func (a *ClaudeCodeAgent) Configure(env map[string]string, providerURL string, model string) {

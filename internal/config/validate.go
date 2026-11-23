@@ -9,65 +9,13 @@ import (
 
 var (
 	nameRe     = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+	distroRe   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	userRe     = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
 	hexColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 )
 
-// Validator holds optional semantic validation functions.
-type Validator struct {
-	// CheckPathExists verifies a path is accessible. If nil, path checks are skipped.
-	CheckPathExists func(path string) bool
-	// CheckUserExists verifies a user exists in the distro. If nil, user checks are skipped.
-	CheckUserExists func(user string) bool
-	// AvailableProviders lists provider names that can be referenced. If nil, no check is performed.
-	AvailableProviders []string
-}
-
-// ValidateWith runs schema validation plus semantic checks using the provided validator.
-func (m *Manifest) ValidateWith(v Validator) error {
-	problems, err := m.ValidateAll()
-	if err != nil {
-		return err
-	}
-
-	agentProvider := strings.ToLower(strings.TrimSpace(m.Agent.Provider))
-
-	// Semantic: agent.provider must reference an available provider.
-	if v.AvailableProviders != nil && agentProvider != "" {
-		found := false
-		for _, p := range v.AvailableProviders {
-			if strings.EqualFold(p, agentProvider) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			problems = append(problems, fmt.Sprintf("agent.provider %q not in available providers: %v", agentProvider, v.AvailableProviders))
-		}
-	}
-
-	// Semantic: jail.user must exist in distro (if specified).
-	if v.CheckUserExists != nil && strings.TrimSpace(m.Jail.User) != "" {
-		if !v.CheckUserExists(m.Jail.User) {
-			problems = append(problems, fmt.Sprintf("jail.user %q does not exist", m.Jail.User))
-		}
-	}
-
-	// Semantic: workspace path must be accessible (if importMode=copy).
-	if v.CheckPathExists != nil && strings.EqualFold(m.Workspace.ImportMode, "copy") {
-		if !v.CheckPathExists(m.Workspace.Path) {
-			problems = append(problems, fmt.Sprintf("workspace.path %q does not exist", m.Workspace.Path))
-		}
-	}
-
-	if len(problems) == 0 {
-		return nil
-	}
-	return fmt.Errorf("manifest validation failed:\n  - %s", strings.Join(problems, "\n  - "))
-}
-
 // Validate checks the manifest's schema and cross-references after defaults have
-// been applied. It returns the first problem encountered; callers may call
-// ValidateAll to surface every issue at once.
+// been applied.
 func (m *Manifest) Validate() error {
 	_, err := m.ValidateAll()
 	return err
@@ -87,17 +35,18 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 
 	name := strings.TrimSpace(m.Name)
 	check(name != "", "name is required")
-	check(nameRe.MatchString(name), "name must match ^[a-z0-9][a-z0-9._-]*$ (got %q)", name)
+	if name != "" {
+		check(nameRe.MatchString(name), "name must match ^[a-z0-9][a-z0-9._-]*$ (got %q)", name)
+	}
 
 	// Environment.
-	base := strings.ToLower(strings.TrimSpace(m.Environment.Base))
-	if base != "" && base != "ubuntu" && base != "debian" {
-		problems = append(problems, fmt.Sprintf("environment.base must be ubuntu|debian (got %q)", m.Environment.Base))
+	dist := strings.TrimSpace(m.Environment.Distribution)
+	if dist != "" {
+		check(distroRe.MatchString(dist), "environment.distribution must match ^[A-Za-z0-9][A-Za-z0-9._-]*$ (got %q)", dist)
 	}
-	importing := strings.EqualFold(strings.TrimSpace(m.Environment.Distribution), "import")
-	if importing {
-		check(base != "", "environment.distribution=import requires environment.base")
-		check(strings.TrimSpace(m.Environment.Version) != "", "environment.distribution=import requires environment.version (e.g. 24.04)")
+	base := strings.ToLower(strings.TrimSpace(m.Environment.Base))
+	if base != "" && base != "ubuntu" {
+		problems = append(problems, fmt.Sprintf("environment.base must be ubuntu (got %q)", m.Environment.Base))
 	}
 	switch strings.ToLower(strings.TrimSpace(m.Environment.Style.Preset)) {
 	case "", "lapel-dark", "violet", "minimal", "none":
@@ -120,9 +69,9 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 	default:
 		problems = append(problems, fmt.Sprintf("provider.type must be openai-compatible|lm-studio|ollama (got %q)", m.Provider.Type))
 	}
-	if strings.TrimSpace(m.Provider.BaseURL) != "" {
-		u, err := url.Parse(m.Provider.BaseURL)
-		check(err == nil && (u.Scheme == "http" || u.Scheme == "https"),
+	if rawURL := strings.TrimSpace(m.Provider.BaseURL); rawURL != "" {
+		u, err := url.Parse(rawURL)
+		check(err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "",
 			"provider.baseURL must be an http/https URL (got %q)", m.Provider.BaseURL)
 	}
 	if m.Provider.ConnectionTimeout < 0 {
@@ -138,6 +87,10 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 	}
 
 	// Workspace.
+	if wsName := strings.TrimSpace(m.Workspace.Name); wsName != "" {
+		check(nameRe.MatchString(wsName) && !strings.Contains(wsName, ".."),
+			"workspace.name must match ^[a-z0-9][a-z0-9._-]*$ without '..' (got %q)", m.Workspace.Name)
+	}
 	switch strings.ToLower(strings.TrimSpace(m.Workspace.ImportMode)) {
 	case "", "copy", "bind":
 	default:
@@ -145,6 +98,9 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 	}
 
 	// Jail.
+	if u := strings.TrimSpace(m.Jail.User); u != "" {
+		check(userRe.MatchString(u), "jail.user must be a valid POSIX username (got %q)", m.Jail.User)
+	}
 	switch strings.ToLower(strings.TrimSpace(m.Jail.Network)) {
 	case "", "unrestricted", "restricted", "outbound-only", "none":
 	default:
@@ -159,4 +115,3 @@ func (m *Manifest) ValidateAll() ([]string, error) {
 	}
 	return problems, fmt.Errorf("manifest validation failed:\n  - %s", strings.Join(problems, "\n  - "))
 }
-
